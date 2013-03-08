@@ -3,6 +3,55 @@
 #include <alloca.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+
+static char const * const PICOHTTP_STR_HTTP_ = "HTTP/";
+static char const * const PICOHTTP_STR_CRLF = "\r\n";
+static char const * const PICOHTTP_STR_SERVER = "Server: ";
+static char const * const PICOHTTP_STR_PICOWEB = "picoweb/0.1";
+
+/* Number formating functions taken from Fefe's libowfat library
+ * http://www.fefe.de/libowfat */
+static size_t fmt_uint(char *dest, unsigned int i)
+{
+	register unsigned long len,tmp,len2;
+	/* first count the number of bytes needed */
+	for (len=1, tmp=i; tmp>9; ++len)
+		tmp/=10;
+	if( dest )
+		for(tmp=i, dest+=len, len2=len+1; --len2; tmp/=10)
+			*--dest = ( tmp % 10 ) + '0';
+	return len;
+}
+
+static size_t fmt_int(char *dest,int i) {
+	if( i < 0 ) {
+		if( dest )
+			*dest++='-';
+		return fmt_uint(dest,-i)+1;
+	}
+	return fmt_uint(dest, i);
+}
+
+static char const * const picohttpStatusString(int16_t code)
+{
+	switch(code) {
+	case 400:
+		return "Bad Request";
+	case 404:
+		return "Not Found";
+	case 414:
+		return "Request URI Too Long";
+	case 500:
+		return "Internal Server Error";
+	case 501:
+		return "Not Implemented";
+	case 505:
+		return "HTTP Version Not Supported";
+	}
+	return "...";
+}
 
 static void picohttpStatus400BadRequest(
 	struct picohttpRequest *req )
@@ -393,7 +442,7 @@ static int16_t picohttpProcessHTTPVersion (
 {
 	if( !picohttpIsCRLF(ch) ) {
 		for(uint8_t i = 0; i < 5; i++) {
-			if("HTTP/"[i] != (char)ch ) {
+			if(PICOHTTP_STR_HTTP_[i] != (char)ch ) {
 				if( ch < 0 ) {
 					return -500;
 				}
@@ -548,5 +597,42 @@ http_error:
 	case 405: picohttpStatus405MethodNotAllowed(&request); break;
 	case 500: picohttpStatus500InternalServerError(&request); break;
 	}
+}
+
+int picohttpResponseSendHeader (
+	struct picohttpRequest * const req )
+{
+	char tmp[16] = {0,};
+	char const *c;
+
+	if(req->sent.header)
+		return 0;
+
+	picohttpIoWrite(
+		req->ioops,
+		sizeof(PICOHTTP_STR_HTTP_)-1,
+		PICOHTTP_STR_HTTP_);
+
+	size_t p = 0;
+	p += fmt_uint(tmp+p, req->httpversion.major);
+	tmp[p] = '.'; p++;
+	p += fmt_uint(tmp+p, req->httpversion.minor);
+	tmp[p] = ' '; p++;
+	p += fmt_uint(tmp+p, req->status);
+	tmp[p] = ' '; p++;
+	assert(p<15);
+	picohttpIoWrite(req->ioops, strlen(tmp), tmp);
+
+	c = picohttpStatusString(req->status);
+	picohttpIoWrite(req->ioops, strlen(c), c);
+}
+
+int picohttpResponseWrite (
+	struct picohttpRequest * const req,
+	size_t len,
+	char const *buf )
+{
+	if( !req->sent.header )
+		picohttpResponseSendHeader(req);
 }
 

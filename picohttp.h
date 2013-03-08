@@ -12,6 +12,12 @@
 #define PICOHTTP_METHOD_HEAD 2
 #define PICOHTTP_METHOD_POST 3
 
+#define PICOHTTP_CODING_IDENTITY 0
+#define PICOHTTP_CODING_COMPRESS 1
+#define PICOHTTP_CODING_DEFLATE  2
+#define PICOHTTP_CODING_GZIP     4
+#define PICOHTTP_CODING_CHUNKED  8
+
 struct picohttpIoOps {
 	int (*read)(size_t /*count*/, char* /*buf*/, void*);
 	int (*write)(size_t /*count*/, char const* /*buf*/, void*);
@@ -75,22 +81,36 @@ struct picohttpRequest {
 		uint8_t minor;
 	} httpversion;
 	struct {
-		uint8_t encoding;
 		char const *contenttype;
 		size_t contentlength;
+		uint8_t contentcoding;
+		uint8_t te;
 	} queryheader;
 	struct {
-		uint8_t encoding;
 		char const *contenttype;
 		char const *date;
 		char const *cachecontrol;
 		char const *disposition;
 		size_t contentlength;
+		uint8_t contentencoding;
+		uint8_t transferencoding;
 	} responseheader;
+	struct {
+		size_t octets;
+		uint8_t header;
+	} sent;
 };
 
 void picohttpProcessRequest(
 	struct picohttpIoOps const * const ioops,
 	struct picohttpURLRoute const * const routes );
+
+int picohttpResponseSendHeader (
+	struct picohttpRequest * const req );
+
+int picohttpResponseWrite (
+	struct picohttpRequest * const req,
+	size_t len,
+	char const *buf );
 
 #endif/*PICOHTTP_H_HEADERGUARD*/
