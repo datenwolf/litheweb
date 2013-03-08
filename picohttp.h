@@ -14,7 +14,7 @@
 
 struct picohttpIoOps {
 	int (*read)(size_t /*count*/, char* /*buf*/, void*);
-	int (*write)(size_t /*count*/, char* /*buf*/, void*);
+	int (*write)(size_t /*count*/, char const* /*buf*/, void*);
 	int16_t (*getch)(void*); // returns -1 on error
 	int (*putch)(char, void*);
 	void *data;
@@ -52,24 +52,41 @@ struct picohttpVar {
 
 struct picohttpRequest;
 
-typedef void (*picohttpHandler) (struct picohttpRequest *ctx);
+typedef void (*picohttpHandler)(struct picohttpRequest*);
 
 struct picohttpURLRoute {
 	char const * urlhead;
 	struct picohttpVarSpec const * get_vars;
 	picohttpHandler handler;
 	uint16_t max_urltail_len;
-	uint8_t allowed_methods;
+	int16_t allowed_methods;
 };
 
 struct picohttpRequest {
 	struct picohttpIoOps const * ioops;
-	struct picohttpURLRoute *route;
+	struct picohttpURLRoute const * route;
 	struct picohttpVar *get_vars;
 	char const *url;
 	char const *urltail;
-	int16_t httpversion;
-	uint8_t method;
+	int16_t status;
+	int16_t method;
+	struct {
+		uint8_t major;
+		uint8_t minor;
+	} httpversion;
+	struct {
+		uint8_t encoding;
+		char const *contenttype;
+		size_t contentlength;
+	} queryheader;
+	struct {
+		uint8_t encoding;
+		char const *contenttype;
+		char const *date;
+		char const *cachecontrol;
+		char const *disposition;
+		size_t contentlength;
+	} responseheader;
 };
 
 void picohttpProcessRequest(

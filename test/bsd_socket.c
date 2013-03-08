@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 
 #include <unistd.h>
 
@@ -40,7 +41,7 @@ int bsdsock_read(size_t count, char *buf, void *data)
 	return rb;
 }
 
-int bsdsock_write(size_t count, char *buf, void *data)
+int bsdsock_write(size_t count, char const *buf, void *data)
 {
 	int fd = *((int*)data);
 	
@@ -92,6 +93,33 @@ void bye(void)
 	close(sockfd);
 }
 
+void rhRoot(struct picohttpRequest *req)
+{
+	fprintf(stderr, "handling request /%s\n", req->urltail);
+
+	char http_header[] = "HTTP/x.x 200 OK\r\nServer: picoweb\r\nContent-Type: text/html\r\n\r\n";
+	http_header[5] = '0'+req->httpversion.major;
+	http_header[7] = '0'+req->httpversion.minor;
+	picohttpIoWrite(req->ioops, sizeof(http_header)-1, http_header);
+	char http_test[] = "<html><head><title>handling request /</title></head>\n<body><a href=\"/test\">/test</a></body></html>\n";
+
+	picohttpIoWrite(req->ioops, sizeof(http_test)-1, http_test);
+}
+
+void rhTest(struct picohttpRequest *req)
+{
+	fprintf(stderr, "handling request /test%s\n", req->urltail);
+	char http_header[] = "HTTP/x.x 200 OK\r\nServer: picoweb\r\nContent-Type: text/text\r\n\r\n";
+	http_header[5] = '0'+req->httpversion.major;
+	http_header[7] = '0'+req->httpversion.minor;
+	picohttpIoWrite(req->ioops, sizeof(http_header)-1, http_header);
+	char http_test[] = "handling request /test";
+	picohttpIoWrite(req->ioops, sizeof(http_test)-1, http_test);
+	if(req->urltail) {
+		picohttpIoWrite(req->ioops, strlen(req->urltail), req->urltail);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -99,9 +127,11 @@ int main(int argc, char *argv[])
 		perror("socket");
 		return -1;
 	}
+#if 0
 	if( atexit(bye) ) {
 		return -1;
 	}
+#endif
 
 	struct sockaddr_in addr = {
 		.sin_family = AF_INET,
@@ -109,6 +139,8 @@ int main(int argc, char *argv[])
 		.sin_addr   = 0
 	};
 
+	int const one = 1;
+	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 	if( -1 == bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) ) {
 		perror("bind");
 		return -1;
@@ -141,11 +173,18 @@ int main(int argc, char *argv[])
 			.data = &confd
 		};
 
-		char const hellostr[] = "Hello World!\n";
-		write(confd, hellostr, sizeof(hellostr));
+		struct picohttpURLRoute routes[] = {
+			{ "/test", 0, rhTest, 16, PICOHTTP_METHOD_GET },
+			{ "/|", 0, rhRoot, 0, PICOHTTP_METHOD_GET },
+			{ NULL, 0, 0, 0, 0 }
+		};
+
+		picohttpProcessRequest(&ioops, routes);
+
 		shutdown(confd, SHUT_RDWR);
 		close(confd);
 	}
 
 	return 0;
 }
+
