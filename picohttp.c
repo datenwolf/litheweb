@@ -2,7 +2,6 @@
 
 #include <alloca.h>
 #include <string.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 
@@ -488,10 +487,7 @@ static int16_t picohttpProcessHeaders (
 
 	/* FIXME: Add Header handling here */
 	while( !picohttpIsCRLF(ch) ) {
-		fprintf(stderr, "\n>>> 0x%02x ", (int)ch, stderr);
-
 		while( !picohttpIsCRLF( ch=picohttpIoSkipSpace(req->ioops, ch)) ){
-			fputc(ch, stderr);
 			if( 0 > ( ch=picohttpIoGetch(req->ioops) ) ) {
 				return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 			}
@@ -505,7 +501,6 @@ static int16_t picohttpProcessHeaders (
 			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 	}
-	fputc('\n', stderr);
 	return ch;
 }
 

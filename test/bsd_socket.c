@@ -147,7 +147,7 @@ void rhFavicon(struct picohttpRequest *req)
 {
 	fprintf(stderr, "handling request /favicon.ico\n");
 
-	req->response.contenttype = "image/vnd.microsoft.icon";
+	req->response.contenttype = "image/x-icon";
 	req->response.contentlength = sizeof(favicon_ico);
 	picohttpResponseWrite(req, sizeof(favicon_ico), favicon_ico);
 }
