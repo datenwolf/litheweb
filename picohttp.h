@@ -40,7 +40,7 @@ struct picohttpIoOps {
 #define picohttpIoRead(ioops,size,buf)  (ioops->read(size, buf, ioops->data))
 #define picohttpIoGetch(ioops)          (ioops->getch(ioops->data))
 #define picohttpIoPutch(ioops,c)        (ioops->putch(c, ioops->data))
-#define picohttpIoFlush(ioops)        (ioops->flush(ioops->data))
+#define picohttpIoFlush(ioops)          (ioops->flush(ioops->data))
 
 enum picohttpVarType {
 	PICOHTTP_TYPE_UNDEFINED = 0,
