@@ -2,7 +2,7 @@
 #ifndef PICOHTTP_H_HEADERGUARD
 #define PICOHTTP_H_HEADERGUARD
 
-#include <stdlib.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define PICOHTTP_MAJORVERSION(x) ( (x & 0x7f00) >> 8 )
@@ -83,8 +83,8 @@ struct picohttpRequest {
 	struct picohttpIoOps const * ioops;
 	struct picohttpURLRoute const * route;
 	struct picohttpVar *get_vars;
-	char const *url;
-	char const *urltail;
+	char *url;
+	char *urltail;
 	int16_t status;
 	int16_t method;
 	struct {
@@ -115,6 +115,9 @@ struct picohttpRequest {
 void picohttpProcessRequest(
 	struct picohttpIoOps const * const ioops,
 	struct picohttpURLRoute const * const routes );
+
+void picohttpStatusResponse(
+	struct picohttpRequest *req, int16_t status );
 
 int picohttpResponseSendHeader (
 	struct picohttpRequest * const req );

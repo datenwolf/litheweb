@@ -2,8 +2,7 @@
 
 #include <alloca.h>
 #include <string.h>
-#include <stdlib.h>
-#include <assert.h>
+/* #include <assert.h> */
 
 static char const PICOHTTP_STR_CRLF[] = "\r\n";
 static char const PICOHTTP_STR_CLSP[] = ": ";
@@ -80,7 +79,7 @@ static char const * const picohttpStatusString(int16_t code)
 	return "...";
 }
 
-static void picohttpStatusResponse(
+void picohttpStatusResponse(
 	struct picohttpRequest *req, int16_t status )
 {
 	req->status = status;
@@ -167,7 +166,7 @@ static int16_t picohttpIoB10ToU8 (
 static int16_t picohttpIoGetPercentCh(
 	struct picohttpIoOps const * const ioops )
 {
-	char ch;
+	char ch=0;
 	int16_t chr;
 	if( 0 > (chr = picohttpIoGetch(ioops)))
 		return chr;
@@ -255,6 +254,7 @@ static int16_t picohttpProcessRequestMethod (
 	struct picohttpIoOps const * const ioops )
 {
 	int16_t method = 0;
+
 	/* Poor man's string matching tree; trade RAM for code */
 	switch( picohttpIoGetch(ioops) ) {
 	case 'H': switch( picohttpIoGetch(ioops) ) {
@@ -325,7 +325,7 @@ static int16_t picohttpProcessURL (
 	 * component.
 	 */
 	/* Deliberately discarding const qualifier! */
-	for(char *urliter = (char*)req->url ;; urliter++) {
+	for(char *urliter = req->url ;; urliter++) {
 		if( ch < 0 ) {
 			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
@@ -343,11 +343,10 @@ static int16_t picohttpProcessURL (
 			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 
-		if( urliter - req->url >= url_max_length ) {
+		if( (urliter - req->url) >= url_max_length ) {
 			return -PICOHTTP_STATUS_414_REQUEST_URI_TOO_LONG;
 		}
 		*urliter = ch;
-
 		ch = picohttpIoGetch(req->ioops);
 	}
 	return ch;
@@ -367,7 +366,11 @@ static int16_t picohttpProcessQuery (
 			}
 		}
 	}
+#ifdef PICOWEB_CONFIG_USE_C99VARARRAY
+	char var[var_max_length+1];
+#else
 	char *var = alloca(var_max_length+1);
+#endif
 
 	while('?' == ch || '&' == ch) {
 		memset(var, 0, var_max_length+1);
@@ -431,6 +434,7 @@ static int16_t picohttpProcessHTTPVersion (
 	struct picohttpRequest * const req,
 	int16_t ch )
 {
+
 	if( !picohttpIsCRLF(ch) ) {
 		for(uint8_t i = 0; i < 5; i++) {
 			if(PICOHTTP_STR_HTTP_[i] != (char)ch ) {
@@ -485,6 +489,7 @@ static int16_t picohttpProcessHeaders (
 #define PICOHTTP_HEADERNAME_MAX_LEN 32
 	char headername[PICOHTTP_HEADERNAME_MAX_LEN] = {0,};
 
+
 	/* FIXME: Add Header handling here */
 	while( !picohttpIsCRLF(ch) ) {
 		while( !picohttpIsCRLF( ch=picohttpIoSkipSpace(req->ioops, ch)) ){
@@ -508,11 +513,12 @@ void picohttpProcessRequest (
 	struct picohttpIoOps const * const ioops,
 	struct picohttpURLRoute const * const routes )
 {
-	char *url;
+
 	int16_t ch;
 	struct picohttpRequest request = {0,};
-	size_t url_max_length = 0;
 
+	size_t url_max_length = 0;
+#if 1
 	for(size_t i = 0; routes[i].urlhead; i++) {
 		size_t url_length =
 			strlen(routes[i].urlhead) +
@@ -521,7 +527,14 @@ void picohttpProcessRequest (
 		if(url_length > url_max_length)
 			url_max_length = url_length;
 	}
-	url = alloca(url_max_length+1);
+#else
+	url_max_length = 512;
+#endif
+#ifdef PICOWEB_CONFIG_USE_C99VARARRAY
+	char url[url_max_length+1];
+#else
+	char *url = alloca(url_max_length+1);
+#endif
 	memset(url, 0, url_max_length+1);
 
 	request.url = url;
@@ -550,6 +563,7 @@ void picohttpProcessRequest (
 
 	if( 0 > (ch = picohttpProcessURL(&request, url_max_length, ch)) )
 		goto http_error;
+
 
 	if( !picohttpMatchRoute(&request, routes) || !request.route ) {
 		ch = -PICOHTTP_STATUS_404_NOT_FOUND;
@@ -582,6 +596,7 @@ void picohttpProcessRequest (
 	return;
 
 http_error:
+
 	picohttpStatusResponse(&request, -ch);
 	picohttpIoFlush(request.ioops);
 }
@@ -620,7 +635,7 @@ int picohttpResponseSendHeaders (
 	tmp[p] = ' '; p++;
 	p += picohttp_fmt_uint(tmp+p, req->status);
 	tmp[p] = ' '; p++;
-	assert(p < sizeof(tmp)-1);
+	/* assert(p < sizeof(tmp)-1); */
 #endif
 	/* HTTP status line */
 	c = picohttpStatusString(req->status);
