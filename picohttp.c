@@ -2,7 +2,6 @@
 
 #include <alloca.h>
 #include <string.h>
-/* #include <assert.h> */
 
 static char const PICOHTTP_STR_CRLF[] = "\r\n";
 static char const PICOHTTP_STR_CLSP[] = ": ";
