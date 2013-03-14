@@ -2,41 +2,66 @@
 
 #include <alloca.h>
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
 
-static char const * const PICOHTTP_STR_HTTP_ = "HTTP/";
-static char const * const PICOHTTP_STR_CRLF = "\r\n";
-static char const * const PICOHTTP_STR_SERVER = "Server: ";
-static char const * const PICOHTTP_STR_PICOWEB = "picoweb/0.1";
+static char const PICOHTTP_STR_CRLF[] = "\r\n";
+static char const PICOHTTP_STR_CLSP[] = ": ";
+static char const PICOHTTP_STR_HTTP_[] = "HTTP/";
+static char const PICOHTTP_STR_SERVER[] = "Server";
+static char const PICOHTTP_STR_PICOWEB[] = "picoweb/0.1";
 
-/* Number formating functions taken from Fefe's libowfat library
- * http://www.fefe.de/libowfat */
-static size_t fmt_uint(char *dest, unsigned int i)
+static char const PICOHTTP_STR_ACCEPT[]    = "Accept";
+static char const PICOHTTP_STR__ENCODING[] = "-Encoding";
+
+static char const PICOHTTP_STR_CONTENT[] = "Content";
+static char const PICOHTTP_STR__TYPE[]   = "-Type";
+static char const PICOHTTP_STR__LENGTH[] = "-Length";
+static char const PICOHTTP_STR__CODING[] = "-Coding";
+
+static char const PICOHTTP_STR_CACHECONTROL[] = "Cache-Control";
+
+static char const PICOHTTP_STR_DATE[] = "Date";
+
+static char const PICOHTTP_STR_EXPECT[] = "Expect";
+
+#if !defined(PICOHTTP_CONFIG_HAVE_LIBDJB)
+/* Number formating functions modified from libdjb by
+ * Daniel J. Bernstein, packaged at http://www.fefe.de/djb/
+ */
+static size_t picohttp_fmt_uint(char *dest, unsigned int i)
 {
-	register unsigned long len,tmp,len2;
+	register unsigned int len, tmp, len2;
 	/* first count the number of bytes needed */
-	for (len=1, tmp=i; tmp>9; ++len)
+	for(len = 1, tmp = i;
+	    tmp > 9;
+	    ++len )
 		tmp/=10;
+
 	if( dest )
-		for(tmp=i, dest+=len, len2=len+1; --len2; tmp/=10)
+		for(tmp = i, dest += len, len2 = len+1;
+		    --len2;
+		    tmp /= 10 )
 			*--dest = ( tmp % 10 ) + '0';
 	return len;
 }
 
-static size_t fmt_int(char *dest,int i) {
+static size_t picohttp_fmt_int(char *dest,int i) {
 	if( i < 0 ) {
 		if( dest )
 			*dest++='-';
-		return fmt_uint(dest,-i)+1;
+		return picohttp_fmt_uint(dest, -i) + 1;
 	}
-	return fmt_uint(dest, i);
+	return picohttp_fmt_uint(dest, i);
 }
+#else
+#define picohttp_fmt_uint fmt_ulong
+#define picohttp_fmt_int fmt_long
+#endif
 
 static char const * const picohttpStatusString(int16_t code)
 {
 	switch(code) {
+	case 200:
+		return "OK";
 	case 400:
 		return "Bad Request";
 	case 404:
@@ -53,54 +78,12 @@ static char const * const picohttpStatusString(int16_t code)
 	return "...";
 }
 
-static void picohttpStatus400BadRequest(
-	struct picohttpRequest *req )
+void picohttpStatusResponse(
+	struct picohttpRequest *req, int16_t status )
 {
-	fputs("400\n", stderr);
-}
-
-static void picohttpStatus404NotFound(
-	struct picohttpRequest *req )
-{
-	char http_header[] = "HTTP/x.x 404 Not Found\r\nServer: picoweb\r\nContent-Type: text/text\r\n\r\n";
-	http_header[5] = '0'+req->httpversion.major;
-	http_header[7] = '0'+req->httpversion.minor;
-	picohttpIoWrite(req->ioops, sizeof(http_header)-1, http_header);
-	picohttpIoWrite(req->ioops, sizeof(http_header)-1, http_header);
-}
-
-static void picohttpStatus405MethodNotAllowed(
-	struct picohttpRequest *req )
-{
-	fputs("405\n", stderr);
-}
-
-static void picohttpStatus414RequestURITooLong(
-	struct picohttpRequest *req )
-{
-	char http_header[] = "HTTP/x.x 414 URI Too Long\r\nServer: picoweb\r\nContent-Type: text/text\r\n\r\n";
-	http_header[5] = '0'+req->httpversion.major;
-	http_header[7] = '0'+req->httpversion.minor;
-	picohttpIoWrite(req->ioops, sizeof(http_header)-1, http_header);
-	picohttpIoWrite(req->ioops, sizeof(http_header)-1, http_header);
-}
-
-static void picohttpStatus500InternalServerError(
-	struct picohttpRequest *req )
-{
-	fputs("500\n", stderr);
-}
-
-static void picohttpStatus501NotImplemented(
-	struct picohttpRequest *req )
-{
-	fputs("501\n", stderr);
-}
-
-static void picohttpStatus505HTTPVersionNotSupported(
-	struct picohttpRequest *req )
-{
-	fputs("505\n", stderr);
+	req->status = status;
+	char const * const c = picohttpStatusString(req->status);
+	picohttpResponseWrite(req, strlen(c), c);
 }
 
 static uint8_t picohttpIsCRLF(int16_t ch)
@@ -182,7 +165,7 @@ static int16_t picohttpIoB10ToU8 (
 static int16_t picohttpIoGetPercentCh(
 	struct picohttpIoOps const * const ioops )
 {
-	char ch;
+	char ch=0;
 	int16_t chr;
 	if( 0 > (chr = picohttpIoGetch(ioops)))
 		return chr;
@@ -209,6 +192,12 @@ static int16_t picohttpIoGetPercentCh(
 	return ch;
 }
 
+/* TODO:
+ * It is possible to do in-place pattern matching on the route definition
+ * array, without first reading in the URL and then processing it here.
+ *
+ * Implement this to imporove memory footprint reduction.
+ */
 static size_t picohttpMatchURL(
 	char const * const urlhead,
 	char const * const url )
@@ -264,6 +253,7 @@ static int16_t picohttpProcessRequestMethod (
 	struct picohttpIoOps const * const ioops )
 {
 	int16_t method = 0;
+
 	/* Poor man's string matching tree; trade RAM for code */
 	switch( picohttpIoGetch(ioops) ) {
 	case 'H': switch( picohttpIoGetch(ioops) ) {
@@ -329,14 +319,14 @@ static int16_t picohttpProcessURL (
 {
 	/* copy url up to the first query component; note that this is not
 	 * fully compliant to RFC 3986, which permits query components in each
-	 * path component (i.e. between '/'-es).
+	 * path component (i.e. between '/'-s).
 	 * picohttp terminates the path once it encounters the first query 
 	 * component.
 	 */
 	/* Deliberately discarding const qualifier! */
-	for(char *urliter = (char*)req->url ;; urliter++) {
+	for(char *urliter = req->url ;; urliter++) {
 		if( ch < 0 ) {
-			return -500;
+			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 		if( '?' == ch ||
 		    picohttpIsLWS(ch) ) {
@@ -345,18 +335,17 @@ static int16_t picohttpProcessURL (
 		if( '%' == ch ) {
 			ch = picohttpIoGetPercentCh(req->ioops);
 			if( ch < 0 ) {
-				return -500;
+				return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 			}
 		}
 		if( !ch ) {
-			return -400;
+			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 
-		if( urliter - req->url >= url_max_length ) {
-			return -414;
+		if( (urliter - req->url) >= url_max_length ) {
+			return -PICOHTTP_STATUS_414_REQUEST_URI_TOO_LONG;
 		}
 		*urliter = ch;
-
 		ch = picohttpIoGetch(req->ioops);
 	}
 	return ch;
@@ -376,14 +365,18 @@ static int16_t picohttpProcessQuery (
 			}
 		}
 	}
+#ifdef PICOWEB_CONFIG_USE_C99VARARRAY
+	char var[var_max_length+1];
+#else
 	char *var = alloca(var_max_length+1);
+#endif
 
 	while('?' == ch || '&' == ch) {
 		memset(var, 0, var_max_length+1);
 		ch = picohttpIoGetch(req->ioops);
 
 		if( ch < 0 ) {
-			return -500;
+			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 		if( '&' == ch )
 			continue;
@@ -391,7 +384,7 @@ static int16_t picohttpProcessQuery (
 
 		for(char *variter = var ;; variter++) {
 			if( ch < 0 ) {
-				return -500;
+				return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 			}
 			if( '='  == ch ||
 			    '#'  == ch ||
@@ -402,11 +395,11 @@ static int16_t picohttpProcessQuery (
 			if( '%' == ch ) {
 				ch = picohttpIoGetPercentCh(req->ioops);
 				if( ch < 0 ) {
-					return -500;
+					return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 				}
 			}
 			if( !ch ) {
-				return -400;
+				return -PICOHTTP_STATUS_400_BAD_REQUEST;
 			}
 
 			if( variter - var >= var_max_length ) {
@@ -415,7 +408,7 @@ static int16_t picohttpProcessQuery (
 				do {
 					ch = picohttpIoGetch(req->ioops);
 					if( ch < 0 ) {
-						return -500;
+						return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 					}
 				} while(!( '&' == ch ||
 				           picohttpIsLWS(ch) ));
@@ -430,7 +423,7 @@ static int16_t picohttpProcessQuery (
 		}
 	}
 	if( 0 > (ch = picohttpIoSkipSpace(req->ioops, ch)) ) {
-		return -500;
+		return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 	}
 
 	return ch;
@@ -440,13 +433,14 @@ static int16_t picohttpProcessHTTPVersion (
 	struct picohttpRequest * const req,
 	int16_t ch )
 {
+
 	if( !picohttpIsCRLF(ch) ) {
 		for(uint8_t i = 0; i < 5; i++) {
 			if(PICOHTTP_STR_HTTP_[i] != (char)ch ) {
 				if( ch < 0 ) {
-					return -500;
+					return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 				}
-				return -400;
+				return -PICOHTTP_STATUS_400_BAD_REQUEST;
 			}
 			ch = picohttpIoGetch(req->ioops);
 		}
@@ -458,30 +452,30 @@ static int16_t picohttpProcessHTTPVersion (
 			req->ioops,
 			ch );
 		if( ch < 0 ) {
-			return -500;
+			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 		if( ch != '.' ) {
-			return -400;
+			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 		ch = picohttpIoB10ToU8(
 			&req->httpversion.minor,
 			req->ioops,
 			0 );
 		if( ch < 0 ) {
-			return -500;
+			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 
 		ch = picohttpIoSkipSpace(req->ioops, ch);
 		if( ch < 0 ) {
-			return -500;
+			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 	}
 	ch = picohttpIoSkipOverCRLF(req->ioops, ch);
 	if( ch < 0 ) {
-		return -500;
+		return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 	}
 	if( !ch ) {
-		return -400;
+		return -PICOHTTP_STATUS_400_BAD_REQUEST;
 	}
 
 	return ch;
@@ -494,26 +488,23 @@ static int16_t picohttpProcessHeaders (
 #define PICOHTTP_HEADERNAME_MAX_LEN 32
 	char headername[PICOHTTP_HEADERNAME_MAX_LEN] = {0,};
 
+
 	/* FIXME: Add Header handling here */
 	while( !picohttpIsCRLF(ch) ) {
-		fprintf(stderr, "\n>>> 0x%02x ", (int)ch, stderr);
-
 		while( !picohttpIsCRLF( ch=picohttpIoSkipSpace(req->ioops, ch)) ){
-			fputc(ch, stderr);
 			if( 0 > ( ch=picohttpIoGetch(req->ioops) ) ) {
-				return -500;
+				return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 			}
 		}
 
 		ch = picohttpIoSkipOverCRLF(req->ioops, ch);
 		if( 0 > ch ) {
-			return -500;
+			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 		if( !ch ) {
-			return -400;
+			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 	}
-	fputc('\n', stderr);
 	return ch;
 }
 
@@ -521,10 +512,12 @@ void picohttpProcessRequest (
 	struct picohttpIoOps const * const ioops,
 	struct picohttpURLRoute const * const routes )
 {
-	char *url;
-	struct picohttpRequest request = {0,};
-	size_t url_max_length = 0;
 
+	int16_t ch;
+	struct picohttpRequest request = {0,};
+
+	size_t url_max_length = 0;
+#if 1
 	for(size_t i = 0; routes[i].urlhead; i++) {
 		size_t url_length =
 			strlen(routes[i].urlhead) +
@@ -532,9 +525,15 @@ void picohttpProcessRequest (
 
 		if(url_length > url_max_length)
 			url_max_length = url_length;
-
 	}
-	url = alloca(url_max_length+1);
+#else
+	url_max_length = 512;
+#endif
+#ifdef PICOWEB_CONFIG_USE_C99VARARRAY
+	char url[url_max_length+1];
+#else
+	char *url = alloca(url_max_length+1);
+#endif
 	memset(url, 0, url_max_length+1);
 
 	request.url = url;
@@ -543,33 +542,35 @@ void picohttpProcessRequest (
 	request.method = 0;
 	request.httpversion.major = 1;
 	request.httpversion.minor = 0;
+	request.sent.header = 0;
+	request.sent.octets = 0;
 
 	request.method = picohttpProcessRequestMethod(ioops);
 	if( !request.method ) {
-		picohttpStatus501NotImplemented(&request);
-		return;
+		ch = -PICOHTTP_STATUS_501_NOT_IMPLEMENTED;
+		goto http_error;
 	}
 	if( 0 > request.method ) {
-		picohttpStatus500InternalServerError(&request);
-		return;
+		ch = -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
+		goto http_error;
 	}
 
-	int16_t ch;
 	if( 0 > (ch = picohttpIoSkipSpace(ioops, 0)) ) {
-		picohttpStatus500InternalServerError(&request);
-		return;
+		ch = -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
+		goto http_error;
 	}
 
 	if( 0 > (ch = picohttpProcessURL(&request, url_max_length, ch)) )
 		goto http_error;
 
+
 	if( !picohttpMatchRoute(&request, routes) || !request.route ) {
-		picohttpStatus404NotFound(&request);
-		return;
+		ch = -PICOHTTP_STATUS_404_NOT_FOUND;
+		goto http_error;
 	}
 	if( !(request.route->allowed_methods & request.method) ) {
-		picohttpStatus405MethodNotAllowed(&request);
-		return;
+		ch = -PICOHTTP_STATUS_405_METHOD_NOT_ALLOWED;
+		goto http_error;
 	}
 
 	if( 0 > (ch = picohttpProcessQuery(&request, ch)) )
@@ -580,51 +581,101 @@ void picohttpProcessRequest (
 
 	if( request.httpversion.major > 1 ||
 	    request.httpversion.minor > 1 ) {
-		picohttpStatus505HTTPVersionNotSupported(&request);
-		return;
+		ch = -PICOHTTP_STATUS_505_HTTP_VERSION_NOT_SUPPORTED;
+		goto http_error;
 	}
 
 	if( 0 > (ch = picohttpProcessHeaders(&request, ch)) )
 		goto http_error;
 
+	request.status = PICOHTTP_STATUS_200_OK;
 	request.route->handler(&request);
+
+	picohttpIoFlush(request.ioops);
 	return;
 
 http_error:
-	switch(-ch) {
-	case 400: picohttpStatus400BadRequest(&request); break;
-	case 404: picohttpStatus404NotFound(&request); break;
-	case 405: picohttpStatus405MethodNotAllowed(&request); break;
-	case 500: picohttpStatus500InternalServerError(&request); break;
-	}
+
+	picohttpStatusResponse(&request, -ch);
+	picohttpIoFlush(request.ioops);
 }
 
-int picohttpResponseSendHeader (
+int picohttpResponseSendHeaders (
 	struct picohttpRequest * const req )
 {
+#define picohttpIO_WRITE_STATIC_STR(x) \
+	(picohttpIoWrite(req->ioops, sizeof(x)-1, x))
+
 	char tmp[16] = {0,};
 	char const *c;
+	int e;
 
 	if(req->sent.header)
 		return 0;
 
-	picohttpIoWrite(
-		req->ioops,
-		sizeof(PICOHTTP_STR_HTTP_)-1,
-		PICOHTTP_STR_HTTP_);
+	if(!req->response.contenttype) {
+		req->response.contenttype = "text/plain";
+	}
+
+#if defined(PICOHTTP_CONFIG_USE_SNPRINTF)
+	snprintf(tmp, sizeof(tmp)-1, "%s%d.%d %d ",
+	         PICOHTTP_STR_HTTP_,
+	         req->httpversion.major,
+		 req->httpversion.minor,
+		 req->status);
+#else
+	if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_HTTP_)) )
+		return e;
 
 	size_t p = 0;
-	p += fmt_uint(tmp+p, req->httpversion.major);
+	p += picohttp_fmt_uint(tmp+p, req->httpversion.major);
 	tmp[p] = '.'; p++;
-	p += fmt_uint(tmp+p, req->httpversion.minor);
+	p += picohttp_fmt_uint(tmp+p, req->httpversion.minor);
 	tmp[p] = ' '; p++;
-	p += fmt_uint(tmp+p, req->status);
+	p += picohttp_fmt_uint(tmp+p, req->status);
 	tmp[p] = ' '; p++;
-	assert(p<15);
-	picohttpIoWrite(req->ioops, strlen(tmp), tmp);
-
+	/* assert(p < sizeof(tmp)-1); */
+#endif
+	/* HTTP status line */
 	c = picohttpStatusString(req->status);
-	picohttpIoWrite(req->ioops, strlen(c), c);
+	if( 0 > (e = picohttpIoWrite(req->ioops, strlen(tmp), tmp)) ||
+	    0 > (e = picohttpIoWrite(req->ioops, strlen(c), c)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
+		return e;
+
+	/* Server header */
+	if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_SERVER)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CLSP)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_PICOWEB)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
+		return e;
+
+	/* Content-Type header */
+	if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CONTENT)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR__TYPE)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CLSP)) ||
+	    0 > (e = picohttpIoWrite(
+			req->ioops, strlen(req->response.contenttype),
+			req->response.contenttype))  ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
+		return e;
+
+	if( req->response.contentlength ){
+		p = picohttp_fmt_uint(tmp, req->response.contentlength);
+		if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CONTENT)) ||
+		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR__LENGTH)) ||
+		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CLSP)) ||
+		    0 > (e = picohttpIoWrite(req->ioops, p, tmp))  ||
+		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
+			return e;
+	}
+
+	if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
+		return e;
+
+	return req->sent.header = 1;
+
+#undef picohttpIO_WRITE_STATIC_STR
 }
 
 int picohttpResponseWrite (
@@ -632,7 +683,29 @@ int picohttpResponseWrite (
 	size_t len,
 	char const *buf )
 {
+	int e;
+
 	if( !req->sent.header )
-		picohttpResponseSendHeader(req);
+		picohttpResponseSendHeaders(req);
+
+	if( req->response.contentlength > 0 ) {
+		if(req->sent.octets >= req->response.contentlength)
+			return -1;
+
+		if(req->sent.octets + len < req->sent.octets) /* int overflow */
+			return -2;
+
+		if(req->sent.octets + len >= req->response.contentlength)
+			len = req->response.contentlength - req->sent.octets;
+	}
+	
+	if( PICOHTTP_METHOD_HEAD == req->method )
+		return 0;
+
+	if( 0 > (e = picohttpIoWrite(req->ioops, len, buf)) )
+		return e;
+
+	req->sent.octets += len;
+	return len;
 }
 
