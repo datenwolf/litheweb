@@ -56,6 +56,7 @@ static size_t picohttp_fmt_int(char *dest,int i) {
 	return picohttp_fmt_uint(dest, i);
 }
 #else
+#include <djb/byte/fmt.h>
 #define picohttp_fmt_uint fmt_ulong
 #define picohttp_fmt_int fmt_long
 #endif
