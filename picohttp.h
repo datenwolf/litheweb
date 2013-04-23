@@ -79,6 +79,17 @@ struct picohttpURLRoute {
 	int16_t allowed_methods;
 };
 
+#define PICOHTTP_EPOCH_YEAR 1980
+
+struct picohttpDateTime {
+	unsigned int Y:7; /* EPOCH + 127 years */
+	unsigned int M:4;
+	unsigned int D:5;
+	unsigned int h:5;
+	unsigned int m:6;
+	unsigned int s:5; /* seconds / 2 */
+};
+
 struct picohttpRequest {
 	struct picohttpIoOps const * ioops;
 	struct picohttpURLRoute const * route;
@@ -99,9 +110,9 @@ struct picohttpRequest {
 	} query;
 	struct {
 		char const *contenttype;
-		char const *date;
-		char const *cachecontrol;
 		char const *disposition;
+		struct picohttpDateTime lastmodified;
+		uint16_t max_age;
 		size_t contentlength;
 		uint8_t contentencoding;
 		uint8_t transferencoding;
