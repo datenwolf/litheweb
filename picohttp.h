@@ -79,7 +79,7 @@ struct picohttpURLRoute {
 	int16_t allowed_methods;
 };
 
-#define PICOHTTP_EPOCH_YEAR 1980
+#define PICOHTTP_EPOCH_YEAR 1970
 
 struct picohttpDateTime {
 	unsigned int Y:7; /* EPOCH + 127 years */
