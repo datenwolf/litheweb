@@ -127,4 +127,15 @@ int picohttpResponseWrite (
 	size_t len,
 	char const *buf );
 
+uint16_t picohttpGetch(
+	struct picohttpRequest * const req,
+	struct picohttpChunkTransfer * const ct);
+
+int picohttpMultipartNext(
+	struct picohttpRequest * const req,
+	struct picohttpMultiPart * const mp);
+
+uint16_t picohttpMultipartGetch(
+	struct picohttpMultiPart * const mp);
+
 #endif/*PICOHTTP_H_HEADERGUARD*/
