@@ -19,6 +19,9 @@ static char const PICOHTTP_STR__CODING[] = "-Coding";
 
 static char const PICOHTTP_STR_CACHECONTROL[] = "Cache-Control";
 
+static char const PICOHTTP_STR_CONNECTION[] = "Connection";
+static char const PICOHTTP_STR_CLOSE[] = "close";
+
 static char const PICOHTTP_STR_DATE[] = "Date";
 
 static char const PICOHTTP_STR_EXPECT[] = "Expect";
@@ -53,6 +56,7 @@ static size_t picohttp_fmt_int(char *dest,int i) {
 	return picohttp_fmt_uint(dest, i);
 }
 #else
+#include <djb/byte/fmt.h>
 #define picohttp_fmt_uint fmt_ulong
 #define picohttp_fmt_int fmt_long
 #endif
@@ -650,6 +654,13 @@ int picohttpResponseSendHeaders (
 	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
 		return e;
 
+	/* Connection header -- for now this is "Connection: close" */
+	if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CONNECTION)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CLSP)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CLOSE)) ||
+	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
+		return e;
+
 	/* Content-Type header */
 	if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CONTENT)) ||
 	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR__TYPE)) ||
@@ -660,6 +671,7 @@ int picohttpResponseSendHeaders (
 	    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
 		return e;
 
+	/* Content-Length header */
 	if( req->response.contentlength ){
 		p = picohttp_fmt_uint(tmp, req->response.contentlength);
 		if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CONTENT)) ||
