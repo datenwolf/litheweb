@@ -126,7 +126,7 @@ struct picohttpRequest {
 		} contenttype;
 		size_t contentlength;
 		uint8_t contentencoding;
-		uint8_t te;
+		uint8_t transferencoding;
 		char multipartboundary[PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1];
 	} query;
 	struct {
@@ -138,6 +138,9 @@ struct picohttpRequest {
 		uint8_t contentencoding;
 		uint8_t transferencoding;
 	} response;
+	struct {
+		size_t length;
+	} currentchunk;
 	struct {
 		size_t octets;
 		uint8_t header;

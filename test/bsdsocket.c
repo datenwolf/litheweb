@@ -80,6 +80,11 @@ int bsdsock_putch(char ch, void *data)
 	return bsdsock_write(1, &ch, data);
 }
 
+int bsdsock_flush(void* data)
+{
+	return 0;
+}
+
 int sockfd = -1;
 
 void bye(void)
@@ -97,13 +102,18 @@ void rhRoot(struct picohttpRequest *req)
 {
 	fprintf(stderr, "handling request /%s\n", req->urltail);
 
-	char http_header[] = "HTTP/x.x 200 OK\r\nServer: picoweb\r\nContent-Type: text/html\r\n\r\n";
-	http_header[5] = '0'+req->httpversion.major;
-	http_header[7] = '0'+req->httpversion.minor;
-	picohttpIoWrite(req->ioops, sizeof(http_header)-1, http_header);
-	char http_test[] = "<html><head><title>handling request /</title></head>\n<body><a href=\"/test\">/test</a></body></html>\n";
+	req->response.contenttype = "text/html";
 
-	picohttpIoWrite(req->ioops, sizeof(http_test)-1, http_test);
+	char http_test[] =
+"<html><head><title>handling request /</title></head><body>\n"
+"<a href=\"/test\">/test</a>"
+"<form action=\"/upload\" enctype=\"multipart/form-data\" method=\"post\">"
+"<label for=\"file\">File: </label><input type=\"file\" name=\"file\"></input>"
+"<input type=\"submit\" value=\"Upload\"></input>"
+"</form>"
+"</body></html>\n";
+
+	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
 }
 
 void rhTest(struct picohttpRequest *req)
@@ -117,6 +127,17 @@ void rhTest(struct picohttpRequest *req)
 	picohttpIoWrite(req->ioops, sizeof(http_test)-1, http_test);
 	if(req->urltail) {
 		picohttpIoWrite(req->ioops, strlen(req->urltail), req->urltail);
+	}
+}
+
+void rhUpload(struct picohttpRequest *req)
+{
+	fprintf(stderr, "handling request /upload%s\n", req->urltail);
+
+	char http_test[] = "handling request /upload";
+	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
+	if(req->urltail) {
+		picohttpResponseWrite(req, strlen(req->urltail), req->urltail);
 	}
 }
 
@@ -170,11 +191,13 @@ int main(int argc, char *argv[])
 			.write = bsdsock_write,
 			.getch = bsdsock_getch,
 			.putch = bsdsock_putch,
+			.flush = bsdsock_flush,
 			.data = &confd
 		};
 
 		struct picohttpURLRoute routes[] = {
 			{ "/test", 0, rhTest, 16, PICOHTTP_METHOD_GET },
+			{ "/upload|", 0, rhUpload, 0, PICOHTTP_METHOD_GET },
 			{ "/|", 0, rhRoot, 0, PICOHTTP_METHOD_GET },
 			{ NULL, 0, 0, 0, 0 }
 		};
