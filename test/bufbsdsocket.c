@@ -143,7 +143,14 @@ void rhRoot(struct picohttpRequest *req)
 
 	req->response.contenttype = "text/html";
 
-	char http_test[] = "<html><head><title>handling request /</title></head>\n<body><a href=\"/test\">/test</a></body></html>\n";
+	char http_test[] =
+"<html><head><title>handling request /</title></head><body>\n"
+"<a href=\"/test\">/test</a>"
+"<form action=\"/upload\" enctype=\"multipart/form-data\" method=\"post\">"
+"<label for=\"file\">File: </label><input type=\"file\" name=\"file\"></input>"
+"<input type=\"submit\" value=\"Upload\"></input>"
+"</form>"
+"</body></html>\n";
 
 	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
 }
@@ -153,6 +160,17 @@ void rhTest(struct picohttpRequest *req)
 	fprintf(stderr, "handling request /test%s\n", req->urltail);
 
 	char http_test[] = "handling request /test";
+	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
+	if(req->urltail) {
+		picohttpResponseWrite(req, strlen(req->urltail), req->urltail);
+	}
+}
+
+void rhUpload(struct picohttpRequest *req)
+{
+	fprintf(stderr, "handling request /upload%s\n", req->urltail);
+
+	char http_test[] = "handling request /upload";
 	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
 	if(req->urltail) {
 		picohttpResponseWrite(req, strlen(req->urltail), req->urltail);
@@ -248,6 +266,7 @@ int main(int argc, char *argv[])
 		struct picohttpURLRoute routes[] = {
 			{"/favicon.ico|", 0, rhFavicon, 0, PICOHTTP_METHOD_GET},
 			{ "/test", 0, rhTest, 16, PICOHTTP_METHOD_GET },
+			{ "/upload|", 0, rhUpload, 0, PICOHTTP_METHOD_GET },
 			{ "/|", 0, rhRoot, 0, PICOHTTP_METHOD_GET },
 			{ NULL, 0, 0, 0, 0 }
 		};
