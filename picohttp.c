@@ -196,6 +196,13 @@ static int16_t picohttpIoGetPercentCh(
 	return ch;
 }
 
+uint16_t picohttpGetch(struct picohttpRequest * const req)
+{
+	/* read HTTP query body, skipping over Chunked Transfer Boundaries
+	 * if Chunked Transfer Encoding is used */
+
+}
+
 /* TODO:
  * It is possible to do in-place pattern matching on the route definition
  * array, without first reading in the URL and then processing it here.
