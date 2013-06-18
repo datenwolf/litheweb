@@ -5,12 +5,29 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN 70
+
 #define PICOHTTP_MAJORVERSION(x) ( (x & 0x7f00) >> 8 )
 #define PICOHTTP_MINORVERSION(x) ( (x & 0x007f) )
 
 #define PICOHTTP_METHOD_GET  1
 #define PICOHTTP_METHOD_HEAD 2
 #define PICOHTTP_METHOD_POST 3
+
+#define PICOHTTP_CONTENTTYPE_APPLICATION	0
+#define PICOHTTP_CONTENTTYPE_AUDIO		1
+#define PICOHTTP_CONTENTTYPE_IMAGE		2
+#define PICOHTTP_CONTENTTYPE_MESSAGE		3
+#define PICOHTTP_CONTENTTYPE_MODEL		4
+#define PICOHTTP_CONTENTTYPE_MULTIPART		5
+#define PICOHTTP_CONTENTTYPE_TEXT		6
+#define PICOHTTP_CONTENTTYPE_VIDEO		7
+
+#define PICOHTTP_CONTENTTYPE_TEXT_SUBTYPE_CSV		3
+#define PICOHTTP_CONTENTTYPE_TEXT_SUBTYPE_HTML		4
+#define PICOHTTP_CONTENTTYPE_TEXT_SUBTYPE_PLAIN	6
+
+#define PICOHTTP_CONTENTTYPE_MULTIPART_SUBTYPE_FORM_DATA	4
 
 #define PICOHTTP_CODING_IDENTITY 0
 #define PICOHTTP_CODING_COMPRESS 1
@@ -92,10 +109,14 @@ struct picohttpRequest {
 		uint8_t minor;
 	} httpversion;
 	struct {
-		char const *contenttype;
+		struct {
+			uint16_t type:4;
+			uint16_t subtype:12;
+		} contenttype;
 		size_t contentlength;
-		uint8_t contentcoding;
+		uint8_t contentencoding;
 		uint8_t te;
+		char multipartboundary[PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1];
 	} query;
 	struct {
 		char const *contenttype;

@@ -1,11 +1,22 @@
 #include "picohttp.h"
 
+#ifdef HOST_DEBUG
+#include <stdio.h>
+#define debug_printf(...) do{fprintf(stderr, __VA_ARGS__);}while(0)
+#define debug_putc(x) do{fputc(x, stderr);}while(0)
+#else
+#define debug_printf(...) do{}while(0)
+#define debug_putc(x) do{}while(0)
+#endif
+
 #include <alloca.h>
 #include <string.h>
+#include <stdlib.h>
 
 static char const PICOHTTP_STR_CRLF[] = "\r\n";
 static char const PICOHTTP_STR_CLSP[] = ": ";
 static char const PICOHTTP_STR_HTTP_[] = "HTTP/";
+static char const PICOHTTP_STR_HOST[] = "Host";
 static char const PICOHTTP_STR_SERVER[] = "Server";
 static char const PICOHTTP_STR_PICOWEB[] = "picoweb/0.1";
 
@@ -17,11 +28,20 @@ static char const PICOHTTP_STR__TYPE[]   = "-Type";
 static char const PICOHTTP_STR__LENGTH[] = "-Length";
 static char const PICOHTTP_STR__CODING[] = "-Coding";
 
+
+static char const PICOHTTP_STR_APPLICATION_[] = "application/";
+static char const PICOHTTP_STR_TEXT_[] = "text/";
+static char const PICOHTTP_STR_MULTIPART_[] = "multipart/";
+
+static char const PICOHTTP_STR_FORMDATA[] = "form-data";
+
 static char const PICOHTTP_STR_CACHECONTROL[] = "Cache-Control";
 
 static char const PICOHTTP_STR_DATE[] = "Date";
 
 static char const PICOHTTP_STR_EXPECT[] = "Expect";
+
+static char const PICOHTTP_STR_BOUNDARY[] = " boundary=";
 
 #if !defined(PICOHTTP_CONFIG_HAVE_LIBDJB)
 /* Number formating functions modified from libdjb by
@@ -196,7 +216,7 @@ static int16_t picohttpIoGetPercentCh(
  * It is possible to do in-place pattern matching on the route definition
  * array, without first reading in the URL and then processing it here.
  *
- * Implement this to imporove memory footprint reduction.
+ * Implement this to improve memory footprint reduction.
  */
 static size_t picohttpMatchURL(
 	char const * const urlhead,
@@ -481,15 +501,75 @@ static int16_t picohttpProcessHTTPVersion (
 	return ch;
 }
 
+static void picohttpProcessContentType(
+	struct picohttpRequest * const req,
+	char const *contenttype )
+{
+	if(!strncmp(contenttype,
+	            PICOHTTP_STR_APPLICATION_, sizeof(PICOHTTP_STR_APPLICATION_)-1)) {
+	}
+
+	if(!strncmp(contenttype,
+	            PICOHTTP_STR_TEXT_, sizeof(PICOHTTP_STR_TEXT_)-1)) {
+	}
+
+	if(!strncmp(contenttype, PICOHTTP_STR_MULTIPART_,
+	            sizeof(PICOHTTP_STR_MULTIPART_)-1)) {
+		req->query.contenttype.type = PICOHTTP_CONTENTTYPE_MULTIPART;
+		contenttype += sizeof(PICOHTTP_STR_MULTIPART_)-1;
+
+		if(!strncmp(contenttype,PICOHTTP_STR_FORMDATA,
+		            sizeof(PICOHTTP_STR_FORMDATA)-1)) {
+			req->query.contenttype.subtype =
+				PICOHTTP_CONTENTTYPE_MULTIPART_SUBTYPE_FORM_DATA;
+			contenttype += sizeof(PICOHTTP_STR_FORMDATA)-1;
+		}
+		char *boundary = strstr(contenttype, PICOHTTP_STR_BOUNDARY);
+		if(boundary) {
+			/* see RFC1521 regarding maximum length of boundary */
+			strncpy(req->query.multipartboundary,
+			        boundary + sizeof(PICOHTTP_STR_BOUNDARY)-1,
+				PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN);
+		}
+	}
+}
+
+static void picohttpProcessHeaderField(
+	struct picohttpRequest * const req,
+	char const * const headername,
+	char const * const headervalue)
+{
+	debug_printf("%s: %s\n", headername, headervalue);
+	if(!strncmp(headername,
+		    PICOHTTP_STR_CONTENT,
+		    sizeof(PICOHTTP_STR_CONTENT)-1)) {
+		/* Content Length */
+		if(!strncmp(headername + sizeof(PICOHTTP_STR_CONTENT)-1,
+			    PICOHTTP_STR__LENGTH, sizeof(PICOHTTP_STR__LENGTH)-1)) {
+			req->query.contentlength = atol(headervalue);
+		}
+
+		/* Content Type */
+		if(!strncmp(headername + sizeof(PICOHTTP_STR_CONTENT)-1,
+			    PICOHTTP_STR__TYPE, sizeof(PICOHTTP_STR__TYPE)-1)) {
+			picohttpProcessContentType(req, headervalue);
+		}
+	}
+}
+
 static int16_t picohttpProcessHeaders (
 	struct picohttpRequest * const req,
 	int16_t ch )
 {
 #define PICOHTTP_HEADERNAME_MAX_LEN 32
-	char headername[PICOHTTP_HEADERNAME_MAX_LEN] = {0,};
+	char headername[PICOHTTP_HEADERNAME_MAX_LEN+1] = {0,};
+#define PICOHTTP_HEADERVALUE_MAX_LEN 224
+	char headervalue[PICOHTTP_HEADERVALUE_MAX_LEN+1] = {0,};
+	char *hn;
+	char *hv;
 
-
-	/* FIXME: Add Header handling here */
+#define JUST_SKIP_HEADERS 0
+#if JUST_SKIP_HEADERS
 	while( !picohttpIsCRLF(ch) ) {
 		while( !picohttpIsCRLF( ch=picohttpIoSkipSpace(req->ioops, ch)) ){
 			if( 0 > ( ch=picohttpIoGetch(req->ioops) ) ) {
@@ -505,6 +585,81 @@ static int16_t picohttpProcessHeaders (
 			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 	}
+#else
+	/* TODO: Add Header handling here */
+	while( !picohttpIsCRLF(ch) ) {
+		/* Beginning of new header line */
+	#if 0
+		ch = picohttpIoGetch(req->ioops);
+	#endif 
+		if( 0 < ch && !picohttpIsCRLF(ch) ){
+			/* new header field OR field continuation */
+			if( picohttpIsLWS(ch) ) {
+				/* continuation */
+				/* skip space */
+				if( 0 > (ch = picohttpIoSkipSpace(req->ioops, ch)) )
+					return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
+
+				/* read until EOL */
+				for(;
+				    0 < ch && !picohttpIsCRLF(ch);
+				    hv = (hv - headervalue) <
+				         PICOHTTP_HEADERVALUE_MAX_LEN ?
+					     hv+1 : 0 ) {
+					/* add to header field content */
+
+					if(hv)
+						*hv = ch;
+
+					ch = picohttpIoGetch(req->ioops);
+				}
+			} else {
+				if( *headername && *headervalue )
+					picohttpProcessHeaderField(
+						req,
+						headername,
+						headervalue );
+				/* new header field */
+				memset(headername, 0, PICOHTTP_HEADERNAME_MAX_LEN+1);
+				hn = headername;
+
+				memset(headervalue, 0, PICOHTTP_HEADERVALUE_MAX_LEN+1);
+				hv = headervalue;
+				/* read until ':' or EOL */
+				for(;
+				    0 < ch && ':' != ch && !picohttpIsCRLF(ch);
+				    hn = (hn - headername) <
+				          PICOHTTP_HEADERNAME_MAX_LEN ?
+					      hn+1 : 0 ) {
+					/* add to header name */
+					if(hn)
+						*hn = ch;
+
+					ch = picohttpIoGetch(req->ioops);
+				}
+			}
+		} 
+		if( 0 > ch  ) {
+			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
+		}
+		if( picohttpIsCRLF(ch) )
+			ch = picohttpIoSkipOverCRLF(req->ioops, ch);
+		else
+			ch = picohttpIoGetch(req->ioops);
+		if( 0 > ch ) {
+			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
+		}
+		if( !ch ) {
+			return -PICOHTTP_STATUS_400_BAD_REQUEST;
+		}
+	}
+	if( *headername && *headervalue )
+		picohttpProcessHeaderField(
+			req,
+			headername,
+			headervalue );
+#endif/*JUST_SKIP_HEADERS*/
+
 	return ch;
 }
 
