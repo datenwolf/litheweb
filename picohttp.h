@@ -96,7 +96,7 @@ struct picohttpURLRoute {
 	int16_t allowed_methods;
 };
 
-#define PICOHTTP_EPOCH_YEAR 1980
+#define PICOHTTP_EPOCH_YEAR 1970
 
 struct picohttpDateTime {
 	unsigned int Y:7; /* EPOCH + 127 years */
@@ -158,5 +158,16 @@ int picohttpResponseWrite (
 	struct picohttpRequest * const req,
 	size_t len,
 	char const *buf );
+
+uint16_t picohttpGetch(
+	struct picohttpRequest * const req,
+	struct picohttpChunkTransfer * const ct);
+
+int picohttpMultipartNext(
+	struct picohttpRequest * const req,
+	struct picohttpMultiPart * const mp);
+
+uint16_t picohttpMultipartGetch(
+	struct picohttpMultiPart * const mp);
 
 #endif/*PICOHTTP_H_HEADERGUARD*/
