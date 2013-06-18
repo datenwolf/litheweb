@@ -21,6 +21,8 @@ static char const PICOHTTP_STR_SERVER[] = "Server";
 static char const PICOHTTP_STR_PICOWEB[] = "picoweb/0.1";
 
 static char const PICOHTTP_STR_ACCEPT[]    = "Accept";
+static char const PICOHTTP_STR_TRANSFER[]  = "Transfer";
+
 static char const PICOHTTP_STR__ENCODING[] = "-Encoding";
 
 static char const PICOHTTP_STR_CONTENT[] = "Content";
@@ -41,10 +43,11 @@ static char const PICOHTTP_STR_CONNECTION[] = "Connection";
 static char const PICOHTTP_STR_CLOSE[] = "close";
 
 static char const PICOHTTP_STR_DATE[] = "Date";
-
 static char const PICOHTTP_STR_EXPECT[] = "Expect";
 
 static char const PICOHTTP_STR_BOUNDARY[] = " boundary=";
+
+static char const PICOHTTP_STR_CHUNKED[] = "chunked";
 
 #if !defined(PICOHTTP_CONFIG_HAVE_LIBDJB)
 /* Number formating functions modified from libdjb by
@@ -540,24 +543,45 @@ static void picohttpProcessContentType(
 
 static void picohttpProcessHeaderField(
 	struct picohttpRequest * const req,
-	char const * const headername,
-	char const * const headervalue)
+	char const *headername,
+	char const *headervalue)
 {
 	debug_printf("%s: %s\n", headername, headervalue);
 	if(!strncmp(headername,
 		    PICOHTTP_STR_CONTENT,
 		    sizeof(PICOHTTP_STR_CONTENT)-1)) {
+		headername += sizeof(PICOHTTP_STR_CONTENT)-1;
 		/* Content Length */
-		if(!strncmp(headername + sizeof(PICOHTTP_STR_CONTENT)-1,
+		if(!strncmp(headername,
 			    PICOHTTP_STR__LENGTH, sizeof(PICOHTTP_STR__LENGTH)-1)) {
 			req->query.contentlength = atol(headervalue);
+			return;
 		}
 
 		/* Content Type */
-		if(!strncmp(headername + sizeof(PICOHTTP_STR_CONTENT)-1,
+		if(!strncmp(headername,
 			    PICOHTTP_STR__TYPE, sizeof(PICOHTTP_STR__TYPE)-1)) {
 			picohttpProcessContentType(req, headervalue);
+			return;
 		}
+		return;
+	}
+
+	if(!strncmp(headername,
+	            PICOHTTP_STR_TRANSFER,
+		    sizeof(PICOHTTP_STR_TRANSFER)-1)) {
+		headername += sizeof(PICOHTTP_STR_TRANSFER)-1;
+		/* Transfer Encoding */
+		if(!strncmp(headername,
+			    PICOHTTP_STR__ENCODING, sizeof(PICOHTTP_STR__ENCODING)-1)) {
+			if(!strncmp(headervalue,
+			            PICOHTTP_STR_CHUNKED,
+			            sizeof(PICOHTTP_STR_CHUNKED)-1)) {
+				req->query.transferencoding = PICOHTTP_CODING_CHUNKED;
+			}
+			return;
+		}
+		return;
 	}
 }
 

@@ -6,12 +6,15 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <assert.h>
 
 #include <unistd.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <netinet/ip.h>
+#include <poll.h>
 
 #include "../picohttp.h"
 
@@ -57,7 +60,7 @@ int bufbsdsock_read(size_t count, char *buf, void *data_)
 
 				assert(pfd.revents & (POLLIN | POLLPRI));
 
-				if( -1 == ioctl(fd, FIONREAD, &avail) ) {
+				if( -1 == ioctl(data->fd, FIONREAD, &avail) ) {
 					perror("ioctl(FIONREAD)");
 					return -1;
 				}
@@ -66,7 +69,7 @@ int bufbsdsock_read(size_t count, char *buf, void *data_)
 			data->recvbuf = malloc( avail);
 
 			int r;
-			while( 0 > (r = read(data->fd, data->recvbuf, avail)) )
+			while( 0 > (r = read(data->fd, data->recvbuf, avail)) ) {
 				if( EINTR == errno )
 					continue;
 
@@ -115,11 +118,6 @@ int bufbsdsock_putch(char ch, void *data)
 }
 
 int bufbsdsock_flush(void *data)
-{
-	return 0;
-}
-
-int bsdsock_flush(void* data)
 {
 	return 0;
 }
@@ -255,11 +253,11 @@ int main(int argc, char *argv[])
 		}
 
 		struct picohttpIoOps ioops = {
-			.read  = bsdsock_read,
-			.write = bsdsock_write,
-			.getch = bsdsock_getch,
-			.putch = bsdsock_putch,
-			.flush = bsdsock_flush,
+			.read  = bufbsdsock_read,
+			.write = bufbsdsock_write,
+			.getch = bufbsdsock_getch,
+			.putch = bufbsdsock_putch,
+			.flush = bufbsdsock_flush,
 			.data = &confd
 		};
 
