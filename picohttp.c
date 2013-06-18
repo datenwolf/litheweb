@@ -568,30 +568,9 @@ static int16_t picohttpProcessHeaders (
 	char *hn;
 	char *hv;
 
-#define JUST_SKIP_HEADERS 0
-#if JUST_SKIP_HEADERS
-	while( !picohttpIsCRLF(ch) ) {
-		while( !picohttpIsCRLF( ch=picohttpIoSkipSpace(req->ioops, ch)) ){
-			if( 0 > ( ch=picohttpIoGetch(req->ioops) ) ) {
-				return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
-			}
-		}
-
-		ch = picohttpIoSkipOverCRLF(req->ioops, ch);
-		if( 0 > ch ) {
-			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
-		}
-		if( !ch ) {
-			return -PICOHTTP_STATUS_400_BAD_REQUEST;
-		}
-	}
-#else
 	/* TODO: Add Header handling here */
 	while( !picohttpIsCRLF(ch) ) {
 		/* Beginning of new header line */
-	#if 0
-		ch = picohttpIoGetch(req->ioops);
-	#endif 
 		if( 0 < ch && !picohttpIsCRLF(ch) ){
 			/* new header field OR field continuation */
 			if( picohttpIsLWS(ch) ) {
@@ -658,7 +637,6 @@ static int16_t picohttpProcessHeaders (
 			req,
 			headername,
 			headervalue );
-#endif/*JUST_SKIP_HEADERS*/
 
 	return ch;
 }
