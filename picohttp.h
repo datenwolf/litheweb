@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN 70
+#define PICOHTTP_DISPOSITION_NAME_MAX 16
 
 #define PICOHTTP_MAJORVERSION(x) ( (x & 0x7f00) >> 8 )
 #define PICOHTTP_MINORVERSION(x) ( (x & 0x007f) )
@@ -14,20 +15,21 @@
 #define PICOHTTP_METHOD_HEAD 2
 #define PICOHTTP_METHOD_POST 3
 
-#define PICOHTTP_CONTENTTYPE_APPLICATION	0
-#define PICOHTTP_CONTENTTYPE_AUDIO		1
-#define PICOHTTP_CONTENTTYPE_IMAGE		2
-#define PICOHTTP_CONTENTTYPE_MESSAGE		3
-#define PICOHTTP_CONTENTTYPE_MODEL		4
-#define PICOHTTP_CONTENTTYPE_MULTIPART		5
-#define PICOHTTP_CONTENTTYPE_TEXT		6
-#define PICOHTTP_CONTENTTYPE_VIDEO		7
+#define PICOHTTP_CONTENTTYPE_APPLICATION	0x0000
+#define PICOHTTP_CONTENTTYPE_AUDIO		0x1000
+#define PICOHTTP_CONTENTTYPE_IMAGE		0x2000
+#define PICOHTTP_CONTENTTYPE_MESSAGE		0x3000
+#define PICOHTTP_CONTENTTYPE_MODEL		0x4000
 
-#define PICOHTTP_CONTENTTYPE_TEXT_SUBTYPE_CSV		3
-#define PICOHTTP_CONTENTTYPE_TEXT_SUBTYPE_HTML		4
-#define PICOHTTP_CONTENTTYPE_TEXT_SUBTYPE_PLAIN	6
+#define PICOHTTP_CONTENTTYPE_MULTIPART		0x5000
+#define PICOHTTP_CONTENTTYPE_MULTIPART_FORMDATA	0x5004
 
-#define PICOHTTP_CONTENTTYPE_MULTIPART_SUBTYPE_FORM_DATA	4
+#define PICOHTTP_CONTENTTYPE_TEXT		0x6000
+#define PICOHTTP_CONTENTTYPE_TEXT_CSV		0x6003
+#define PICOHTTP_CONTENTTYPE_TEXT_HTML		0x6004
+#define PICOHTTP_CONTENTTYPE_TEXT_PLAIN		0x6006
+
+#define PICOHTTP_CONTENTTYPE_VIDEO		0x7000
 
 #define PICOHTTP_CODING_IDENTITY 0
 #define PICOHTTP_CODING_COMPRESS 1
@@ -52,12 +54,6 @@ struct picohttpIoOps {
 	int (*flush)(void*);
 	void *data;
 };
-
-#define picohttpIoWrite(ioops,size,buf) (ioops->write(size, buf, ioops->data))
-#define picohttpIoRead(ioops,size,buf)  (ioops->read(size, buf, ioops->data))
-#define picohttpIoGetch(ioops)          (ioops->getch(ioops->data))
-#define picohttpIoPutch(ioops,c)        (ioops->putch(c, ioops->data))
-#define picohttpIoFlush(ioops)          (ioops->flush(ioops->data))
 
 enum picohttpVarType {
 	PICOHTTP_TYPE_UNDEFINED = 0,
@@ -120,10 +116,7 @@ struct picohttpRequest {
 		uint8_t minor;
 	} httpversion;
 	struct {
-		struct {
-			uint16_t type:4;
-			uint16_t subtype:12;
-		} contenttype;
+		uint16_t contenttype;
 		size_t contentlength;
 		uint8_t contentencoding;
 		uint8_t transferencoding;
@@ -141,10 +134,20 @@ struct picohttpRequest {
 	struct {
 		size_t length;
 	} currentchunk;
+	size_t received_octets;
 	struct {
 		size_t octets;
 		uint8_t header;
 	} sent;
+};
+
+struct picohttpMultipart {
+	struct picohttpRequest *req;
+	uint16_t contenttype;
+	struct {
+		char name[PICOHTTP_DISPOSITION_NAME_MAX+1];
+	} disposition;
+	uint8_t boundarymatch_counter;
 };
 
 void picohttpProcessRequest(
@@ -168,9 +171,9 @@ uint16_t picohttpGetch(
 
 int picohttpMultipartNext(
 	struct picohttpRequest * const req,
-	struct picohttpMultiPart * const mp);
+	struct picohttpMultipart * const mp);
 
 uint16_t picohttpMultipartGetch(
-	struct picohttpMultiPart * const mp);
+	struct picohttpMultipart * const mp);
 
 #endif/*PICOHTTP_H_HEADERGUARD*/

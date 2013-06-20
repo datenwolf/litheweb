@@ -122,17 +122,20 @@ void rhTest(struct picohttpRequest *req)
 	char http_header[] = "HTTP/x.x 200 OK\r\nServer: picoweb\r\nContent-Type: text/text\r\n\r\n";
 	http_header[5] = '0'+req->httpversion.major;
 	http_header[7] = '0'+req->httpversion.minor;
-	picohttpIoWrite(req->ioops, sizeof(http_header)-1, http_header);
+	picohttpResponseWrite(req, sizeof(http_header)-1, http_header);
 	char http_test[] = "handling request /test";
-	picohttpIoWrite(req->ioops, sizeof(http_test)-1, http_test);
+	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
 	if(req->urltail) {
-		picohttpIoWrite(req->ioops, strlen(req->urltail), req->urltail);
+		picohttpResponseWrite(req, strlen(req->urltail), req->urltail);
 	}
 }
 
 void rhUpload(struct picohttpRequest *req)
 {
 	fprintf(stderr, "handling request /upload%s\n", req->urltail);
+
+	if( PICOHTTP_CONTENTTYPE_MULTIPART_FORMDATA != req->query.contenttype )
+		return;
 
 	char http_test[] = "handling request /upload";
 	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);

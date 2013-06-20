@@ -1,5 +1,11 @@
 #include "picohttp.h"
 
+#define picohttpIoWrite(ioops,size,buf) (ioops->write(size, buf, ioops->data))
+#define picohttpIoRead(ioops,size,buf)  (ioops->read(size, buf, ioops->data))
+#define picohttpIoGetch(ioops)          (ioops->getch(ioops->data))
+#define picohttpIoPutch(ioops,c)        (ioops->putch(c, ioops->data))
+#define picohttpIoFlush(ioops)          (ioops->flush(ioops->data))
+
 #ifdef HOST_DEBUG
 #include <stdio.h>
 #define debug_printf(...) do{fprintf(stderr, __VA_ARGS__);}while(0)
@@ -446,6 +452,7 @@ static int16_t picohttpProcessQuery (
 			ch = picohttpIoGetch(req->ioops);
 		}
 		if( '=' == ch ) {
+			debug_printf("set variable '%s'\n", var);
 		} else {
 		}
 	}
@@ -522,15 +529,18 @@ static void picohttpProcessContentType(
 
 	if(!strncmp(contenttype, PICOHTTP_STR_MULTIPART_,
 	            sizeof(PICOHTTP_STR_MULTIPART_)-1)) {
-		req->query.contenttype.type = PICOHTTP_CONTENTTYPE_MULTIPART;
 		contenttype += sizeof(PICOHTTP_STR_MULTIPART_)-1;
+		req->query.contenttype =
+			PICOHTTP_CONTENTTYPE_MULTIPART;
 
 		if(!strncmp(contenttype,PICOHTTP_STR_FORMDATA,
 		            sizeof(PICOHTTP_STR_FORMDATA)-1)) {
-			req->query.contenttype.subtype =
-				PICOHTTP_CONTENTTYPE_MULTIPART_SUBTYPE_FORM_DATA;
 			contenttype += sizeof(PICOHTTP_STR_FORMDATA)-1;
+
+			req->query.contenttype =
+				PICOHTTP_CONTENTTYPE_MULTIPART_FORMDATA;
 		}
+
 		char *boundary = strstr(contenttype, PICOHTTP_STR_BOUNDARY);
 		if(boundary) {
 			/* see RFC1521 regarding maximum length of boundary */
