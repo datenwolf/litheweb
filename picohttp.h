@@ -165,9 +165,7 @@ int picohttpResponseWrite (
 	size_t len,
 	char const *buf );
 
-uint16_t picohttpGetch(
-	struct picohttpRequest * const req,
-	struct picohttpChunkTransfer * const ct);
+uint16_t picohttpGetch(struct picohttpRequest * const req);
 
 int picohttpMultipartNext(
 	struct picohttpRequest * const req,
