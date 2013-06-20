@@ -885,3 +885,47 @@ int picohttpResponseWrite (
 	return len;
 }
 
+uint16_t picohttpMultipartGetch(
+	struct picohttpMultiPart * const mp);
+{
+	if( mp->replay + mp->in_boundary < 0) {
+		uint16_t ch = mp->replay < 1 ? '-' :
+			mp->req->query.multipartboundary[mp->replay - 1];
+		mp->replay++;
+		return ch;
+	} else if( mp->finished) {
+		return -1;
+	} else {
+		uint16_t ch;
+		ch = picohttpIoGetch(mp->req->ioops);
+		if( 0 > ch  ) {
+			return ch;
+		}
+
+		if( (0 == mp->in_boundary && '\r' == ch) ||
+		    (1 == mp->in_boundary && '\n' == ch) ||
+		    (2  < mp->in_boundary &&  '-' == ch) ||
+		    (4  < mp->in_boundary &&
+		     mp->req->query.multipartboundary[mp->in_boundary-4] == ch) ) {
+			if( 5 < mp->in_boundary &&
+			    0 == mp->req->query.multipartboundary[mp->in_boundary-3] ) {
+			    	/* matched boundary */
+				mp->finished = 1;
+				return 0;
+			}
+			mp->in_boundary++;
+			ch = picohttpIoGetch(mp->req->ioops);
+			if( 0 >= ch  ) {
+				return -1;
+			}
+		} else {
+			mp->replay = mp->in_boundary + 1;
+			return '-';
+		}
+	}
+} 
+
+  
+  
+  
+  
