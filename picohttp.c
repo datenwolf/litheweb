@@ -225,11 +225,22 @@ static int16_t picohttpIoGetPercentCh(
 	return ch;
 }
 
-uint16_t picohttpGetch(struct picohttpRequest * const req)
+int16_t picohttpGetch(struct picohttpRequest * const req)
 {
 	/* read HTTP query body, skipping over Chunked Transfer Boundaries
 	 * if Chunked Transfer Encoding is used */
+	uint16_t ch = picohttpIoGetch(req->ioops);
 
+	if( 0 <= ch ) {
+		/* use dirty hack?
+		 * *((uint32_t*)prev_ch) = *((uint32_t*)prev_ch) >> 8;
+		 */
+		req->query.prev_ch[0] = req->query.prev_ch[1];
+		req->query.prev_ch[1] = req->query.prev_ch[2];
+		req->query.prev_ch[2] = ch;
+	}
+
+	return ch;
 }
 
 /* TODO:
@@ -766,6 +777,19 @@ void picohttpProcessRequest (
 	if( 0 > (ch = picohttpProcessHeaders(&request, ch)) )
 		goto http_error;
 
+	if( '\r' == ch ) {	
+		if( 0 > (ch = picohttpIoGetch(ioops)) )
+			goto http_error;
+		if( '\n' != ch ) {
+			ch = -PICOHTTP_STATUS_400_BAD_REQUEST;
+			goto http_error;
+		}
+	}
+
+	request.query.prev_ch[0] = 0;
+	request.query.prev_ch[1] = '\r';
+	request.query.prev_ch[2] = '\n';
+
 	request.status = PICOHTTP_STATUS_200_OK;
 	request.route->handler(&request);
 
@@ -895,47 +919,95 @@ int picohttpResponseWrite (
 	return len;
 }
 
-uint16_t picohttpMultipartGetch(
-	struct picohttpMultiPart * const mp);
+int16_t picohttpMultipartGetch(
+	struct picohttpMultipart * const mp)
 {
-	if( mp->replay + mp->in_boundary < 0) {
-		uint16_t ch = mp->replay < 1 ? '-' :
-			mp->req->query.multipartboundary[mp->replay - 1];
-		mp->replay++;
-		return ch;
-	} else if( mp->finished) {
+	uint16_t ch; 
+	if( 0 < mp->replay ) {
+		if( mp->replay <= mp->in_boundary ) {
+			ch = mp->replay < 3 ? '-' :
+				mp->req->query.multipartboundary[mp->replay - 3];
+			mp->replay++;
+		} else {
+			ch = mp->req->query.prev_ch[2];
+			mp->replay = 0;
+			mp->in_boundary = 0;
+		}
+	} else if( mp->finished ) {
 		return -1;
 	} else {
-		uint16_t ch;
-		ch = picohttpIoGetch(mp->req->ioops);
-		if( 0 > ch  ) {
-			return ch;
-		}
+		ch = picohttpGetch(mp->req);
+		while( 0 <= ch ) {
+			/* picohttp's query and header parsing is forgiving
+			 * regarding line termination. <CR><LF> or just <LF>
+			 * are accepted.
+			 * However multipart boundaries must be preceeded by
+			 * a <CR><LF> sequence, we're strict about that.
+			 */
+			if( (   0 == mp->in_boundary && '-' == ch &&
+			     '\r' == mp->req->query.prev_ch[0] &&
+			     '\n' == mp->req->query.prev_ch[1] ) ||
+			    (   1 == mp->in_boundary && '-' == ch ) ||
+			    (   1  < mp->in_boundary &&
+			      mp->req->query.multipartboundary[mp->in_boundary-2] == ch) ) {
+				if( 1 < mp->in_boundary &&
+				    0 == mp->req->query.multipartboundary[mp->in_boundary-1] ) {
+					/* matched boundary */
+					char trail[2];
+					for(int i=0; i<2; i++) {
+						trail[i] = picohttpGetch(mp->req);
+						if( 0 > trail[1] )
+							return -1;
+					}
+				
+					if(trail[0] == '\r' && trail[1] == '\n')
+						mp->finished = 1;
 
-		if( (0 == mp->in_boundary && '\r' == ch) ||
-		    (1 == mp->in_boundary && '\n' == ch) ||
-		    (2  < mp->in_boundary &&  '-' == ch) ||
-		    (4  < mp->in_boundary &&
-		     mp->req->query.multipartboundary[mp->in_boundary-4] == ch) ) {
-			if( 5 < mp->in_boundary &&
-			    0 == mp->req->query.multipartboundary[mp->in_boundary-3] ) {
-			    	/* matched boundary */
-				mp->finished = 1;
-				return 0;
+					if(trail[0] == '-' && trail[1] == '-')
+						mp->finished = 2;
+
+					return -1;
+				} else {
+					mp->in_boundary++;
+				}
+			} else {
+				if( 0 < mp->in_boundary ) {
+					mp->replay = 1;
+					return '-';
+				}
+				return ch;
 			}
-			mp->in_boundary++;
-			ch = picohttpIoGetch(mp->req->ioops);
-			if( 0 >= ch  ) {
-				return -1;
-			}
-		} else {
-			mp->replay = mp->in_boundary + 1;
-			return '-';
+			ch = picohttpGetch(mp->req);
 		}
 	}
+	return ch;
 } 
 
-  
-  
-  
-  
+int picohttpMultipartNext(
+	struct picohttpRequest * const req,
+	struct picohttpMultipart * const mp)
+{
+	mp->req = req;
+	mp->finished = 0;
+	mp->in_boundary = 0;
+	mp->replay = 0;
+
+	int r;
+	for(;;) {
+		r = picohttpMultipartGetch(mp);
+		if( 2 == mp->finished ) {
+			debug_printf("last multipart\n");
+			break;
+		}
+
+		if( 1 == mp->finished ) {
+			mp->replay = 0;
+			mp->in_boundary = 0;
+			mp->finished = 0;
+		}
+
+		debug_printf("% .3d = %c\n", r, r);
+	}
+
+	return 0;
+}

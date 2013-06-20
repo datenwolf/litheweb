@@ -138,6 +138,10 @@ void rhUpload(struct picohttpRequest *req)
 		return;
 
 	char http_test[] = "handling request /upload";
+
+	struct picohttpMultipart mp;
+	picohttpMultipartNext(req, &mp);
+
 	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
 	if(req->urltail) {
 		picohttpResponseWrite(req, strlen(req->urltail), req->urltail);

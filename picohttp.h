@@ -5,7 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN 70
+/* max 70 for boundary + 4 chars for "<CR><LF>--" */
+#define PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN 74
 #define PICOHTTP_DISPOSITION_NAME_MAX 16
 
 #define PICOHTTP_MAJORVERSION(x) ( (x & 0x7f00) >> 8 )
@@ -16,6 +17,8 @@
 #define PICOHTTP_METHOD_POST 3
 
 #define PICOHTTP_CONTENTTYPE_APPLICATION	0x0000
+#define PICOHTTP_CONTENTTYPE_APPLICATION_OCTETSTREAM 0x0000
+
 #define PICOHTTP_CONTENTTYPE_AUDIO		0x1000
 #define PICOHTTP_CONTENTTYPE_IMAGE		0x2000
 #define PICOHTTP_CONTENTTYPE_MESSAGE		0x3000
@@ -121,6 +124,7 @@ struct picohttpRequest {
 		uint8_t contentencoding;
 		uint8_t transferencoding;
 		char multipartboundary[PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1];
+		char prev_ch[3];
 	} query;
 	struct {
 		char const *contenttype;
@@ -143,11 +147,13 @@ struct picohttpRequest {
 
 struct picohttpMultipart {
 	struct picohttpRequest *req;
+	uint8_t finished;
 	uint16_t contenttype;
 	struct {
 		char name[PICOHTTP_DISPOSITION_NAME_MAX+1];
 	} disposition;
-	uint8_t boundarymatch_counter;
+	int in_boundary;
+	int replay;
 };
 
 void picohttpProcessRequest(
@@ -165,13 +171,13 @@ int picohttpResponseWrite (
 	size_t len,
 	char const *buf );
 
-uint16_t picohttpGetch(struct picohttpRequest * const req);
+int16_t picohttpGetch(struct picohttpRequest * const req);
 
 int picohttpMultipartNext(
 	struct picohttpRequest * const req,
 	struct picohttpMultipart * const mp);
 
-uint16_t picohttpMultipartGetch(
+int16_t picohttpMultipartGetch(
 	struct picohttpMultipart * const mp);
 
 #endif/*PICOHTTP_H_HEADERGUARD*/
