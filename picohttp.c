@@ -562,7 +562,10 @@ static void picohttpProcessContentType(
 		char *boundary = strstr(contenttype, PICOHTTP_STR_BOUNDARY);
 		if(boundary) {
 			/* see RFC1521 regarding maximum length of boundary */
-			strncpy(req->query.multipartboundary,
+			memset(req->query.multipartboundary, 0,
+			       PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1);
+			memcpy(req->query.multipartboundary, "\r\n--", 4);
+			strncpy(req->query.multipartboundary+4,
 			        boundary + sizeof(PICOHTTP_STR_BOUNDARY)-1,
 				PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN);
 		}
@@ -615,6 +618,7 @@ static void picohttpProcessHeaderField(
 
 static int16_t picohttpProcessHeaders (
 	struct picohttpRequest * const req,
+	picohttpHeaderFieldCallback headerfieldcallback,
 	int16_t ch )
 {
 #define PICOHTTP_HEADERNAME_MAX_LEN 32
@@ -650,7 +654,7 @@ static int16_t picohttpProcessHeaders (
 				}
 			} else {
 				if( *headername && *headervalue )
-					picohttpProcessHeaderField(
+					headerfieldcallback(
 						req,
 						headername,
 						headervalue );
@@ -689,7 +693,7 @@ static int16_t picohttpProcessHeaders (
 		}
 	}
 	if( *headername && *headervalue )
-		picohttpProcessHeaderField(
+		headerfieldcallback(
 			req,
 			headername,
 			headervalue );
@@ -774,7 +778,7 @@ void picohttpProcessRequest (
 		goto http_error;
 	}
 
-	if( 0 > (ch = picohttpProcessHeaders(&request, ch)) )
+	if( 0 > (ch = picohttpProcessHeaders(&request, picohttpProcessHeaderField, ch)) )
 		goto http_error;
 
 	if( '\r' == ch ) {	
@@ -922,21 +926,42 @@ int picohttpResponseWrite (
 int16_t picohttpMultipartGetch(
 	struct picohttpMultipart * const mp)
 {
-	uint16_t ch; 
+	uint16_t ch;
 	if( 0 < mp->replay ) {
-		if( mp->replay <= mp->in_boundary ) {
-			ch = mp->replay < 3 ? '-' :
-				mp->req->query.multipartboundary[mp->replay - 3];
-			mp->replay++;
+		if( mp->replayhead < mp->replay ) {
+			ch = mp->req->query.multipartboundary[mp->replayhead];
+			mp->replayhead++;
+			debug_printf("replay_n: ");
 		} else {
 			ch = mp->req->query.prev_ch[2];
 			mp->replay = 0;
+			mp->replayhead = 0;
 			mp->in_boundary = 0;
+			debug_printf("replay_p: ");
 		}
+		return ch;
 	} else if( mp->finished ) {
 		return -1;
 	} else {
 		ch = picohttpGetch(mp->req);
+
+		mp->replay = 0;
+		if( '\r' == ch ) {
+			mp->in_boundary = 0;
+			mp->replayhead = 0;
+		} else
+		if( '\r' == mp->req->query.prev_ch[1] &&
+		    '\n' == ch ) {
+			mp->in_boundary = 1;
+			mp->replayhead = 1;
+		} else
+		if( '\r' == mp->req->query.prev_ch[0] &&
+		    '\n' == mp->req->query.prev_ch[1] &&
+		     '-' == ch ) {
+			mp->in_boundary = 2;
+			mp->replayhead = 2;
+		}
+
 		while( 0 <= ch ) {
 			/* picohttp's query and header parsing is forgiving
 			 * regarding line termination. <CR><LF> or just <LF>
@@ -944,14 +969,19 @@ int16_t picohttpMultipartGetch(
 			 * However multipart boundaries must be preceeded by
 			 * a <CR><LF> sequence, we're strict about that.
 			 */
+		/* --- problematic conditional ---*/
+		#if 0
 			if( (   0 == mp->in_boundary && '-' == ch &&
 			     '\r' == mp->req->query.prev_ch[0] &&
 			     '\n' == mp->req->query.prev_ch[1] ) ||
 			    (   1 == mp->in_boundary && '-' == ch ) ||
 			    (   1  < mp->in_boundary &&
 			      mp->req->query.multipartboundary[mp->in_boundary-2] == ch) ) {
-				if( 1 < mp->in_boundary &&
-				    0 == mp->req->query.multipartboundary[mp->in_boundary-1] ) {
+		#endif
+			if( mp->req->query.multipartboundary[mp->in_boundary] == ch ) {
+				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
+					mp->in_boundary = 0;
+					mp->replay = 0;
 					/* matched boundary */
 					char trail[2];
 					for(int i=0; i<2; i++) {
@@ -960,20 +990,30 @@ int16_t picohttpMultipartGetch(
 							return -1;
 					}
 				
-					if(trail[0] == '\r' && trail[1] == '\n')
+					if(trail[0] == '\r' && trail[1] == '\n') {
 						mp->finished = 1;
+					}
 
 					if(trail[0] == '-' && trail[1] == '-')
 						mp->finished = 2;
 
 					return -1;
-				} else {
-					mp->in_boundary++;
-				}
+				} 
+				mp->in_boundary++;
 			} else {
-				if( 0 < mp->in_boundary ) {
-					mp->replay = 1;
-					return '-';
+				if( mp->in_boundary ) {
+					if( '\r' == ch ) {
+						debug_printf("\\r");
+						mp->replay = mp->in_boundary;
+					} else
+					if( '\n' == ch ) {
+						debug_printf("\\n");
+						mp->replay = mp->in_boundary;
+					} else {
+						mp->replay = mp->in_boundary;
+					}
+
+					ch = mp->req->query.multipartboundary[mp->replayhead++];
 				}
 				return ch;
 			}
@@ -983,6 +1023,50 @@ int16_t picohttpMultipartGetch(
 	return ch;
 } 
 
+static void picohttpMultipartHeaderField(
+	struct picohttpRequest * const req,
+	char const *headername,
+	char const *headervalue)
+{
+	debug_printf("%s: %s\n", headername, headervalue);
+	if(!strncmp(headername,
+		    PICOHTTP_STR_CONTENT,
+		    sizeof(PICOHTTP_STR_CONTENT)-1)) {
+		headername += sizeof(PICOHTTP_STR_CONTENT)-1;
+		/* Content Length */
+		if(!strncmp(headername,
+			    PICOHTTP_STR__LENGTH, sizeof(PICOHTTP_STR__LENGTH)-1)) {
+			req->query.contentlength = atol(headervalue);
+			return;
+		}
+
+		/* Content Type */
+		if(!strncmp(headername,
+			    PICOHTTP_STR__TYPE, sizeof(PICOHTTP_STR__TYPE)-1)) {
+			picohttpProcessContentType(req, headervalue);
+			return;
+		}
+		return;
+	}
+
+	if(!strncmp(headername,
+	            PICOHTTP_STR_TRANSFER,
+		    sizeof(PICOHTTP_STR_TRANSFER)-1)) {
+		headername += sizeof(PICOHTTP_STR_TRANSFER)-1;
+		/* Transfer Encoding */
+		if(!strncmp(headername,
+			    PICOHTTP_STR__ENCODING, sizeof(PICOHTTP_STR__ENCODING)-1)) {
+			if(!strncmp(headervalue,
+			            PICOHTTP_STR_CHUNKED,
+			            sizeof(PICOHTTP_STR_CHUNKED)-1)) {
+				req->query.transferencoding = PICOHTTP_CODING_CHUNKED;
+			}
+			return;
+		}
+		return;
+	}
+}
+
 int picohttpMultipartNext(
 	struct picohttpRequest * const req,
 	struct picohttpMultipart * const mp)
@@ -991,22 +1075,32 @@ int picohttpMultipartNext(
 	mp->finished = 0;
 	mp->in_boundary = 0;
 	mp->replay = 0;
+	mp->replayhead = 0;
 
 	int r;
 	for(;;) {
 		r = picohttpMultipartGetch(mp);
 		if( 2 == mp->finished ) {
-			debug_printf("last multipart\n");
-			break;
+			debug_printf("\n ### last multipart ###\n");
+			return -1;
 		}
 
 		if( 1 == mp->finished ) {
-			mp->replay = 0;
-			mp->in_boundary = 0;
 			mp->finished = 0;
+			debug_printf("\n--- boundary ---\n");
 		}
 
-		debug_printf("% .3d = %c\n", r, r);
+	#if 1
+		switch(r) {
+		case '\r':
+			debug_printf("% .2x = <CR>\n", r); break;
+		case '\n':
+			debug_printf("% .2x = <LF>\n", r, r); break;
+		default:
+			debug_printf("% .2x = %c\n", r, r); break;
+		}
+	#endif
+
 	}
 
 	return 0;

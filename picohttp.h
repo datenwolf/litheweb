@@ -154,7 +154,13 @@ struct picohttpMultipart {
 	} disposition;
 	int in_boundary;
 	int replay;
+	int replayhead;
 };
+
+typedef void (*picohttpHeaderFieldCallback)(
+	struct picohttpRequest *req,
+	char const *headername,
+	char const *headervalue);
 
 void picohttpProcessRequest(
 	struct picohttpIoOps const * const ioops,
