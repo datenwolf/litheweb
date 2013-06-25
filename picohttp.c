@@ -235,9 +235,9 @@ int16_t picohttpGetch(struct picohttpRequest * const req)
 		/* use dirty hack?
 		 * *((uint32_t*)prev_ch) = *((uint32_t*)prev_ch) >> 8;
 		 */
-		req->query.prev_ch[0] = req->query.prev_ch[1];
-		req->query.prev_ch[1] = req->query.prev_ch[2];
-		req->query.prev_ch[2] = ch;
+		req->query.prev_ch[0] = ch;
+		for(int i = 1; i < 4; i++)
+			req->query.prev_ch[i+1] = req->query.prev_ch[i];
 	}
 
 	return ch;
@@ -564,8 +564,8 @@ static void picohttpProcessContentType(
 			/* see RFC1521 regarding maximum length of boundary */
 			memset(req->query.multipartboundary, 0,
 			       PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1);
-			memcpy(req->query.multipartboundary, "\r\n--", 4);
-			strncpy(req->query.multipartboundary+4,
+			memcpy(req->query.multipartboundary, "\r\n\r\n--", 6);
+			strncpy(req->query.multipartboundary+6,
 			        boundary + sizeof(PICOHTTP_STR_BOUNDARY)-1,
 				PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN);
 		}
@@ -791,8 +791,10 @@ void picohttpProcessRequest (
 	}
 
 	request.query.prev_ch[0] = 0;
-	request.query.prev_ch[1] = '\r';
-	request.query.prev_ch[2] = '\n';
+	request.query.prev_ch[1] = '\n';
+	request.query.prev_ch[2] = '\r';
+	request.query.prev_ch[3] = '\n';
+	request.query.prev_ch[4] = '\r';
 
 	request.status = PICOHTTP_STATUS_200_OK;
 	request.route->handler(&request);
@@ -933,7 +935,7 @@ int16_t picohttpMultipartGetch(
 			mp->replayhead++;
 			debug_printf("replay_n: ");
 		} else {
-			ch = mp->req->query.prev_ch[2];
+			ch = mp->req->query.prev_ch[4];
 			mp->replay = 0;
 			mp->replayhead = 0;
 			mp->in_boundary = 0;
@@ -945,39 +947,44 @@ int16_t picohttpMultipartGetch(
 	} else {
 		ch = picohttpGetch(mp->req);
 
+	/* picohttp's query and header parsing is forgiving
+	 * regarding line termination. <CR><LF> or just <LF>
+	 * are accepted.
+	 * However multipart boundaries are to start with
+	 * a <CR><LF><CR><LF> sequence, we're strict about that.
+	 */
+
 		mp->replay = 0;
 		if( '\r' == ch ) {
-			mp->in_boundary = 0;
-			mp->replayhead = 0;
+			if( '\r' == mp->req->query.prev_ch[2] && 
+			    '\n' == mp->req->query.prev_ch[1] ) {
+				mp->replayhead =
+				mp->in_boundary = 2;
+			} else {
+				mp->replayhead =
+				mp->in_boundary = 0;
+			}
 		} else
-		if( '\r' == mp->req->query.prev_ch[1] &&
-		    '\n' == ch ) {
-			mp->in_boundary = 1;
-			mp->replayhead = 1;
+		if( '\n' == ch &&
+		    '\r' == mp->req->query.prev_ch[1] ) {
+			if( '\r' == mp->req->query.prev_ch[3] && 
+			    '\n' == mp->req->query.prev_ch[2] ) {
+				mp->replayhead =
+				mp->in_boundary = 3;
+			} else {
+				mp->replayhead = 
+				mp->in_boundary = 1;
+			}
 		} else
-		if( '\r' == mp->req->query.prev_ch[0] &&
-		    '\n' == mp->req->query.prev_ch[1] &&
-		     '-' == ch ) {
-			mp->in_boundary = 2;
-			mp->replayhead = 2;
+		if( '-' == ch ) {
+			if( '\r' == mp->req->query.prev_ch[0] &&
+			    '\n' == mp->req->query.prev_ch[1] ) {
+				mp->in_boundary = 2;
+				mp->replayhead = 2;
+			}
 		}
 
 		while( 0 <= ch ) {
-			/* picohttp's query and header parsing is forgiving
-			 * regarding line termination. <CR><LF> or just <LF>
-			 * are accepted.
-			 * However multipart boundaries must be preceeded by
-			 * a <CR><LF> sequence, we're strict about that.
-			 */
-		/* --- problematic conditional ---*/
-		#if 0
-			if( (   0 == mp->in_boundary && '-' == ch &&
-			     '\r' == mp->req->query.prev_ch[0] &&
-			     '\n' == mp->req->query.prev_ch[1] ) ||
-			    (   1 == mp->in_boundary && '-' == ch ) ||
-			    (   1  < mp->in_boundary &&
-			      mp->req->query.multipartboundary[mp->in_boundary-2] == ch) ) {
-		#endif
 			if( mp->req->query.multipartboundary[mp->in_boundary] == ch ) {
 				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
 					mp->in_boundary = 0;
