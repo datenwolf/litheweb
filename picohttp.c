@@ -232,12 +232,8 @@ int16_t picohttpGetch(struct picohttpRequest * const req)
 	uint16_t ch = picohttpIoGetch(req->ioops);
 
 	if( 0 <= ch ) {
-		/* use dirty hack?
-		 * *((uint32_t*)prev_ch) = *((uint32_t*)prev_ch) >> 8;
-		 */
+		memmove(req->query.prev_ch + 1, req->query.prev_ch, 4);
 		req->query.prev_ch[0] = ch;
-		for(int i = 1; i < 4; i++)
-			req->query.prev_ch[i+1] = req->query.prev_ch[i];
 	}
 
 	return ch;
@@ -790,11 +786,11 @@ void picohttpProcessRequest (
 		}
 	}
 
-	request.query.prev_ch[0] = 0;
-	request.query.prev_ch[1] = '\n';
-	request.query.prev_ch[2] = '\r';
-	request.query.prev_ch[3] = '\n';
-	request.query.prev_ch[4] = '\r';
+	request.query.prev_ch[0] = '\n';
+	request.query.prev_ch[1] = '\r';
+	request.query.prev_ch[2] = '\n';
+	request.query.prev_ch[3] = '\r';
+	request.query.prev_ch[4] = 0;
 
 	request.status = PICOHTTP_STATUS_200_OK;
 	request.route->handler(&request);
@@ -934,14 +930,14 @@ int16_t picohttpMultipartGetch(
 			ch = mp->req->query.multipartboundary[mp->replayhead];
 			mp->replayhead++;
 			debug_printf("replay_n: ");
+			return ch;
 		} else {
-			ch = mp->req->query.prev_ch[4];
+			ch = mp->req->query.prev_ch[0];
 			mp->replay = 0;
 			mp->replayhead = 0;
-			mp->in_boundary = 0;
 			debug_printf("replay_p: ");
+			return ch;
 		}
-		return ch;
 	} else if( mp->finished ) {
 		return -1;
 	} else {
@@ -956,37 +952,62 @@ int16_t picohttpMultipartGetch(
 
 		mp->replay = 0;
 		if( '\r' == ch ) {
+			debug_printf("<CR|");
 			if( '\r' == mp->req->query.prev_ch[2] && 
 			    '\n' == mp->req->query.prev_ch[1] ) {
+				debug_printf("2>");
 				mp->replayhead =
 				mp->in_boundary = 2;
 			} else {
+				debug_printf("0>");
 				mp->replayhead =
 				mp->in_boundary = 0;
 			}
 		} else
 		if( '\n' == ch &&
 		    '\r' == mp->req->query.prev_ch[1] ) {
+			debug_printf("<LF");
 			if( '\r' == mp->req->query.prev_ch[3] && 
 			    '\n' == mp->req->query.prev_ch[2] ) {
+				debug_printf("|3>");
 				mp->replayhead =
 				mp->in_boundary = 3;
 			} else {
+				debug_printf("|1>");
 				mp->replayhead = 
 				mp->in_boundary = 1;
 			}
 		} else
-		if( '-' == ch ) {
-			if( '\r' == mp->req->query.prev_ch[0] &&
-			    '\n' == mp->req->query.prev_ch[1] ) {
-				mp->in_boundary = 2;
-				mp->replayhead = 2;
-			}
+		if(  '-' == ch &&
+		    '\r' == mp->req->query.prev_ch[2] &&
+		    '\n' == mp->req->query.prev_ch[1] &&
+		    '\r' == mp->req->query.prev_ch[4] &&
+		    '\n' == mp->req->query.prev_ch[3] ) {
+			debug_printf("<-4>");
+			mp->replayhead =
+			mp->in_boundary = 4;
 		}
 
 		while( 0 <= ch ) {
+
+		switch(ch) {
+		case '\r':
+			debug_printf("<CR>"); break;
+		case '\n':
+			debug_printf("<LF>"); break;
+		default:
+			debug_putc(ch); break;
+		}
+
 			if( mp->req->query.multipartboundary[mp->in_boundary] == ch ) {
 				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
+					/* In case of a match there still might be some
+					 * characters consumed, which we must return.
+					 * For this we properly adjust the replay mechanism.
+					 *
+					 * TODO!
+					 */
+
 					mp->in_boundary = 0;
 					mp->replay = 0;
 					/* matched boundary */
@@ -1009,17 +1030,72 @@ int16_t picohttpMultipartGetch(
 				mp->in_boundary++;
 			} else {
 				if( mp->in_boundary ) {
+
+				/* In case the mismatch was due to a <CR> or <LF>
+				 * or '-' character, it must be checked, if this may be
+				 * preceeded by some <CR><LF>* sequence that would
+				 * allow to be a valid multipart boundary. This
+				 * In that case the exact replay parameters depend
+				 * on the exact combination.
+				 *
+				 * The replay code above also emits the last character
+				 * read from IO, but in this case that character is
+				 * far ahead of what should actually be returned.
+				 * So we maniulate the content of the prev_ch[0]
+				 * to be the final character of the replay and
+				 * have the replay from the boundary buffer be one
+				 * position short
+				 */
+
+				/* dw: I really hate how deep this nests, but
+				 * unfortunately HTTP and multipart body parsing
+				 * is a nasty, convoluted state machine
+				 */
 					if( '\r' == ch ) {
-						debug_printf("\\r");
-						mp->replay = mp->in_boundary;
+						debug_printf("[CR|");
+						if( '\r' == mp->req->query.prev_ch[2] && 
+						    '\n' == mp->req->query.prev_ch[1] ) {
+							debug_printf("2]");
+							mp->replay = mp->in_boundary - 3;
+							mp->in_boundary = 3;
+						} else {
+							debug_printf("0]");
+							mp->replay = mp->in_boundary - 1;
+							mp->in_boundary = 1;
+						}
+						mp->req->query.prev_ch[0] = 
+							mp->req->query.multipartboundary[mp->replay];
 					} else
-					if( '\n' == ch ) {
-						debug_printf("\\n");
-						mp->replay = mp->in_boundary;
+					if( '\n' == ch &&
+					    '\r' == mp->req->query.prev_ch[1] ) {
+						debug_printf("[LF");
+						if( '\r' == mp->req->query.prev_ch[3] && 
+						    '\n' == mp->req->query.prev_ch[2] ) {
+							debug_printf("|3]");
+							mp->replay = mp->in_boundary - 4;
+							mp->in_boundary = 4;
+						} else {
+							debug_printf("|1]");
+							mp->replay = mp->in_boundary - 2;
+							mp->in_boundary = 2;
+						}
+						mp->req->query.prev_ch[0] = 
+							mp->req->query.multipartboundary[mp->replay];
+					} else
+					if(  '-' == ch &&
+					    '\r' == mp->req->query.prev_ch[2] &&
+					    '\n' == mp->req->query.prev_ch[1] &&
+					    '\r' == mp->req->query.prev_ch[4] &&
+					    '\n' == mp->req->query.prev_ch[3] ) {
+						debug_printf("[-4]");
+						mp->replay = mp->in_boundary - 4;
+						mp->in_boundary = 4;
 					} else {
 						mp->replay = mp->in_boundary;
+						mp->in_boundary = 0;
 					}
 
+					debug_printf("\nreplayhead %d-->%d: ", mp->replayhead, mp->replay);
 					ch = mp->req->query.multipartboundary[mp->replayhead++];
 				}
 				return ch;
@@ -1085,7 +1161,7 @@ int picohttpMultipartNext(
 	mp->replayhead = 0;
 
 	int r;
-	for(;;) {
+	do {
 		r = picohttpMultipartGetch(mp);
 		if( 2 == mp->finished ) {
 			debug_printf("\n ### last multipart ###\n");
@@ -1097,18 +1173,21 @@ int picohttpMultipartNext(
 			debug_printf("\n--- boundary ---\n");
 		}
 
+		if( -1 == r )
+			continue;
+
 	#if 1
 		switch(r) {
 		case '\r':
-			debug_printf("% .2x = <CR>\n", r); break;
+			debug_printf(" % .2x = <CR>\n", r); break;
 		case '\n':
-			debug_printf("% .2x = <LF>\n", r, r); break;
+			debug_printf(" % .2x = <LF>\n", r, r); break;
 		default:
-			debug_printf("% .2x = %c\n", r, r); break;
+			debug_printf(" % .2x = %c\n", r, r); break;
 		}
 	#endif
 
-	}
+	} while(1);
 
 	return 0;
 }
