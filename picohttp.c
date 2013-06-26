@@ -945,13 +945,16 @@ int16_t picohttpMultipartGetch(
 	 * regarding line termination. <CR><LF> or just <LF>
 	 * are accepted.
 	 * However multipart boundaries are to start with
-	 * a <CR><LF><CR><LF> sequence, we're strict about that.
+	 * a [<CR>]<LF><CR><LF> sequence.
 	 */
 
 		mp->replay = 0;
 		if( '\r' == ch ) {
-			if( '\r' == mp->req->query.prev_ch[2] && 
-			    '\n' == mp->req->query.prev_ch[1] ) {
+			if( '\n' == mp->req->query.prev_ch[1]
+		#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
+			    && '\r' == mp->req->query.prev_ch[2]
+		#endif
+			) {
 				mp->replayhead =
 				mp->in_boundary = 2;
 			} else {
@@ -961,8 +964,11 @@ int16_t picohttpMultipartGetch(
 		} else
 		if( '\n' == ch &&
 		    '\r' == mp->req->query.prev_ch[1] ) {
-			if( '\r' == mp->req->query.prev_ch[3] && 
-			    '\n' == mp->req->query.prev_ch[2] ) {
+			if( '\n' == mp->req->query.prev_ch[2]
+		#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
+			    && '\r' == mp->req->query.prev_ch[3]
+		#endif
+			) {
 				mp->replayhead =
 				mp->in_boundary = 3;
 			} else {
@@ -971,15 +977,19 @@ int16_t picohttpMultipartGetch(
 			}
 		} else
 		if(  '-' == ch &&
-		    '\r' == mp->req->query.prev_ch[2] &&
 		    '\n' == mp->req->query.prev_ch[1] &&
-		    '\r' == mp->req->query.prev_ch[4] &&
-		    '\n' == mp->req->query.prev_ch[3] ) {
+		    '\r' == mp->req->query.prev_ch[2] &&
+		    '\n' == mp->req->query.prev_ch[3] 
+	#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
+		    && '\r' == mp->req->query.prev_ch[4]
+	#endif
+		) {
 			mp->replayhead =
 			mp->in_boundary = 4;
 		}
 
 		while( 0 <= ch ) {
+
 			if( mp->req->query.multipartboundary[mp->in_boundary] == ch ) {
 				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
 					mp->in_boundary = 0;
@@ -996,6 +1006,9 @@ int16_t picohttpMultipartGetch(
 						mp->finished = 1;
 					}
 
+				/* TODO: Technically the last boundary is followed by
+				 * a last <CR><LF> sequence... we should check for this
+				 * as well, just for completeness */
 					if(trail[0] == '-' && trail[1] == '-')
 						mp->finished = 2;
 
@@ -1026,8 +1039,11 @@ int16_t picohttpMultipartGetch(
 				 * is a nasty, convoluted state machine
 				 */
 					if( '\r' == ch ) {
-						if( '\r' == mp->req->query.prev_ch[2] && 
-						    '\n' == mp->req->query.prev_ch[1] ) {
+						if( '\n' == mp->req->query.prev_ch[1]
+					#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
+						    && '\r' == mp->req->query.prev_ch[2]
+					#endif
+						) {
 							mp->replay = mp->in_boundary - 3;
 							mp->in_boundary = 3;
 						} else {
@@ -1039,8 +1055,11 @@ int16_t picohttpMultipartGetch(
 					} else
 					if( '\n' == ch &&
 					    '\r' == mp->req->query.prev_ch[1] ) {
-						if( '\r' == mp->req->query.prev_ch[3] && 
-						    '\n' == mp->req->query.prev_ch[2] ) {
+						if( '\n' == mp->req->query.prev_ch[2]
+					#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
+						    && '\r' == mp->req->query.prev_ch[3]
+					#endif
+						) {
 							mp->replay = mp->in_boundary - 4;
 							mp->in_boundary = 4;
 						} else {
@@ -1051,16 +1070,20 @@ int16_t picohttpMultipartGetch(
 							mp->req->query.multipartboundary[mp->replay];
 					} else
 					if(  '-' == ch &&
-					    '\r' == mp->req->query.prev_ch[2] &&
 					    '\n' == mp->req->query.prev_ch[1] &&
-					    '\r' == mp->req->query.prev_ch[4] &&
-					    '\n' == mp->req->query.prev_ch[3] ) {
+					    '\r' == mp->req->query.prev_ch[2] &&
+					    '\n' == mp->req->query.prev_ch[3]
+				#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
+					    && '\r' == mp->req->query.prev_ch[4]
+				#endif
+					) {
 						mp->replay = mp->in_boundary - 4;
 						mp->in_boundary = 4;
 					} else {
 						mp->replay = mp->in_boundary;
 						mp->in_boundary = 0;
 					}
+
 					ch = mp->req->query.multipartboundary[mp->replayhead++];
 				}
 				return ch;
@@ -1077,42 +1100,6 @@ static void picohttpMultipartHeaderField(
 	char const *headervalue)
 {
 	debug_printf("%s: %s\n", headername, headervalue);
-	if(!strncmp(headername,
-		    PICOHTTP_STR_CONTENT,
-		    sizeof(PICOHTTP_STR_CONTENT)-1)) {
-		headername += sizeof(PICOHTTP_STR_CONTENT)-1;
-		/* Content Length */
-		if(!strncmp(headername,
-			    PICOHTTP_STR__LENGTH, sizeof(PICOHTTP_STR__LENGTH)-1)) {
-			req->query.contentlength = atol(headervalue);
-			return;
-		}
-
-		/* Content Type */
-		if(!strncmp(headername,
-			    PICOHTTP_STR__TYPE, sizeof(PICOHTTP_STR__TYPE)-1)) {
-			picohttpProcessContentType(req, headervalue);
-			return;
-		}
-		return;
-	}
-
-	if(!strncmp(headername,
-	            PICOHTTP_STR_TRANSFER,
-		    sizeof(PICOHTTP_STR_TRANSFER)-1)) {
-		headername += sizeof(PICOHTTP_STR_TRANSFER)-1;
-		/* Transfer Encoding */
-		if(!strncmp(headername,
-			    PICOHTTP_STR__ENCODING, sizeof(PICOHTTP_STR__ENCODING)-1)) {
-			if(!strncmp(headervalue,
-			            PICOHTTP_STR_CHUNKED,
-			            sizeof(PICOHTTP_STR_CHUNKED)-1)) {
-				req->query.transferencoding = PICOHTTP_CODING_CHUNKED;
-			}
-			return;
-		}
-		return;
-	}
 }
 
 int picohttpMultipartNext(
@@ -1125,30 +1112,54 @@ int picohttpMultipartNext(
 	mp->replay = 0;
 	mp->replayhead = 0;
 
-	int r;
+	int16_t ch;
 	do {
-		r = picohttpMultipartGetch(mp);
-		if( 2 == mp->finished ) {
-			debug_printf("\n ### last multipart ###\n");
-			return -1;
-		}
+		ch = picohttpMultipartGetch(mp);
+		if( -1 == ch ) {
+			if( 2 == mp->finished ) {
+				debug_printf("\n### last multipart ###\n");
+				return -1;
+			}
 
-		if( 1 == mp->finished ) {
-			mp->finished = 0;
-			debug_printf("\n--- boundary ---\n");
-		}
+			if( 1 == mp->finished ) {
+				mp->finished = 0;
+				debug_printf("\n--- boundary ---\n");
 
-		if( -1 == r )
-			continue;
+				if( 0 > (ch = picohttpMultipartGetch(mp)) )
+					return ch;
+
+				if( 0 > (ch = picohttpProcessHeaders(
+						req,
+						picohttpMultipartHeaderField,
+						ch)) )
+					return ch;
+
+				if( '\r' == ch ) {	
+					if( 0 > (ch = picohttpIoGetch(req->ioops)) )
+						return ch;
+					if( '\n' != ch ) {
+						return -PICOHTTP_STATUS_400_BAD_REQUEST;
+					}
+				}
+
+				req->query.prev_ch[0] = '\n';
+				req->query.prev_ch[1] = '\r';
+				req->query.prev_ch[2] = '\n';
+				req->query.prev_ch[3] = '\r';
+				req->query.prev_ch[4] = 0;
+
+				continue;
+			}
+		}
 
 	#if 1
-		switch(r) {
+		switch(ch) {
 		case '\r':
-			debug_printf(" % .2x = <CR>\n", r); break;
+			debug_printf(" % .2x = <CR>\n", ch); break;
 		case '\n':
-			debug_printf(" % .2x = <LF>\n", r, r); break;
+			debug_printf(" % .2x = <LF>\n", ch, ch); break;
 		default:
-			debug_printf(" % .2x = %c\n", r, r); break;
+			debug_printf(" % .2x = %c\n", ch, ch); break;
 		}
 	#endif
 

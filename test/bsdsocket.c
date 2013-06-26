@@ -109,7 +109,8 @@ void rhRoot(struct picohttpRequest *req)
 "<html><head><title>handling request /</title></head><body>\n"
 "<a href=\"/test\">/test</a>"
 "<form action=\"/upload\" enctype=\"multipart/form-data\" method=\"post\">"
-"<label for=\"file\">File: </label><input type=\"file\" name=\"file\"></input>"
+"<label for=\"file1\">File: </label><input type=\"file\" name=\"file1\"></input>"
+"<label for=\"file2\">File: </label><input type=\"file\" name=\"file2\"></input>"
 "<input type=\"submit\" value=\"Upload\"></input>"
 "</form>"
 "</body></html>\n";
