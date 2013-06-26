@@ -560,8 +560,8 @@ static void picohttpProcessContentType(
 			/* see RFC1521 regarding maximum length of boundary */
 			memset(req->query.multipartboundary, 0,
 			       PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1);
-			memcpy(req->query.multipartboundary, "\r\n\r\n--", 6);
-			strncpy(req->query.multipartboundary+6,
+			memcpy(req->query.multipartboundary, "\r\n--", 4);
+			strncpy(req->query.multipartboundary+4,
 			        boundary + sizeof(PICOHTTP_STR_BOUNDARY)-1,
 				PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN);
 		}
@@ -945,11 +945,13 @@ int16_t picohttpMultipartGetch(
 	 * regarding line termination. <CR><LF> or just <LF>
 	 * are accepted.
 	 * However multipart boundaries are to start with
-	 * a [<CR>]<LF><CR><LF> sequence.
+	 * a <CR><LF> sequence.
 	 */
 
 		mp->replay = 0;
 		if( '\r' == ch ) {
+			debug_printf("'CR'");
+	#if PICOHTTP_CRLFCRLF
 			if( '\n' == mp->req->query.prev_ch[1]
 		#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
 			    && '\r' == mp->req->query.prev_ch[2]
@@ -957,13 +959,17 @@ int16_t picohttpMultipartGetch(
 			) {
 				mp->replayhead =
 				mp->in_boundary = 2;
-			} else {
+			} else
+	#endif
+			{
 				mp->replayhead =
 				mp->in_boundary = 0;
 			}
 		} else
 		if( '\n' == ch &&
 		    '\r' == mp->req->query.prev_ch[1] ) {
+			debug_printf("'LF'");
+	#if PICOHTTP_CRLFCRLF
 			if( '\n' == mp->req->query.prev_ch[2]
 		#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
 			    && '\r' == mp->req->query.prev_ch[3]
@@ -971,21 +977,26 @@ int16_t picohttpMultipartGetch(
 			) {
 				mp->replayhead =
 				mp->in_boundary = 3;
-			} else {
+			} else 
+	#endif
+			{
 				mp->replayhead = 
 				mp->in_boundary = 1;
 			}
 		} else
 		if(  '-' == ch &&
 		    '\n' == mp->req->query.prev_ch[1] &&
-		    '\r' == mp->req->query.prev_ch[2] &&
-		    '\n' == mp->req->query.prev_ch[3] 
+		    '\r' == mp->req->query.prev_ch[2]
+#if PICOHTTP_CRLFCRLF
+		    && '\n' == mp->req->query.prev_ch[3] 
 	#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
 		    && '\r' == mp->req->query.prev_ch[4]
 	#endif
+#endif
 		) {
+			debug_printf("'-'");
 			mp->replayhead =
-			mp->in_boundary = 4;
+			mp->in_boundary = 2;
 		}
 
 		while( 0 <= ch ) {
@@ -1039,6 +1050,7 @@ int16_t picohttpMultipartGetch(
 				 * is a nasty, convoluted state machine
 				 */
 					if( '\r' == ch ) {
+				#if PICOHTTP_CRLFCRLF
 						if( '\n' == mp->req->query.prev_ch[1]
 					#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
 						    && '\r' == mp->req->query.prev_ch[2]
@@ -1046,7 +1058,9 @@ int16_t picohttpMultipartGetch(
 						) {
 							mp->replay = mp->in_boundary - 3;
 							mp->in_boundary = 3;
-						} else {
+						} else 
+				#endif
+						{
 							mp->replay = mp->in_boundary - 1;
 							mp->in_boundary = 1;
 						}
@@ -1055,6 +1069,7 @@ int16_t picohttpMultipartGetch(
 					} else
 					if( '\n' == ch &&
 					    '\r' == mp->req->query.prev_ch[1] ) {
+				#if PICOHTTP_CRLFCRLF
 						if( '\n' == mp->req->query.prev_ch[2]
 					#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
 						    && '\r' == mp->req->query.prev_ch[3]
@@ -1062,7 +1077,9 @@ int16_t picohttpMultipartGetch(
 						) {
 							mp->replay = mp->in_boundary - 4;
 							mp->in_boundary = 4;
-						} else {
+						} else 
+				#endif
+						{
 							mp->replay = mp->in_boundary - 2;
 							mp->in_boundary = 2;
 						}
@@ -1071,14 +1088,16 @@ int16_t picohttpMultipartGetch(
 					} else
 					if(  '-' == ch &&
 					    '\n' == mp->req->query.prev_ch[1] &&
-					    '\r' == mp->req->query.prev_ch[2] &&
-					    '\n' == mp->req->query.prev_ch[3]
+					    '\r' == mp->req->query.prev_ch[2]
+			#if PICOHTTP_CRLFCRLF
+					    && '\n' == mp->req->query.prev_ch[3]
 				#if PICOHTTP_STRICT_CRLF_MULTIPART_BOUNDARY_PREFIX
 					    && '\r' == mp->req->query.prev_ch[4]
 				#endif
+			#endif
 					) {
 						mp->replay = mp->in_boundary - 4;
-						mp->in_boundary = 4;
+						mp->in_boundary = 2;
 					} else {
 						mp->replay = mp->in_boundary;
 						mp->in_boundary = 0;

@@ -5,8 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* max 70 for boundary + 6 chars for "<CR><LF>--" */
-#define PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN 76
+/* max 70 for boundary + 4 chars for "<CR><LF>--" */
+#define PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN 74
 #define PICOHTTP_DISPOSITION_NAME_MAX 16
 
 #define PICOHTTP_MAJORVERSION(x) ( (x & 0x7f00) >> 8 )
