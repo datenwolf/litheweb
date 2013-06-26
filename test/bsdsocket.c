@@ -70,8 +70,9 @@ int bsdsock_write(size_t count, char const *buf, void *data)
 int16_t bsdsock_getch(void *data)
 {
 	char ch;
-	if( 1 != bsdsock_read(1, &ch, data) )
-		return -1;
+	int err;
+	if( 1 != (err = bsdsock_read(1, &ch, data)) )
+		return err;
 	return ch;
 }
 

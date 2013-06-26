@@ -929,13 +929,11 @@ int16_t picohttpMultipartGetch(
 		if( mp->replayhead < mp->replay ) {
 			ch = mp->req->query.multipartboundary[mp->replayhead];
 			mp->replayhead++;
-			debug_printf("replay_n: ");
 			return ch;
 		} else {
 			ch = mp->req->query.prev_ch[0];
 			mp->replay = 0;
 			mp->replayhead = 0;
-			debug_printf("replay_p: ");
 			return ch;
 		}
 	} else if( mp->finished ) {
@@ -952,28 +950,22 @@ int16_t picohttpMultipartGetch(
 
 		mp->replay = 0;
 		if( '\r' == ch ) {
-			debug_printf("<CR|");
 			if( '\r' == mp->req->query.prev_ch[2] && 
 			    '\n' == mp->req->query.prev_ch[1] ) {
-				debug_printf("2>");
 				mp->replayhead =
 				mp->in_boundary = 2;
 			} else {
-				debug_printf("0>");
 				mp->replayhead =
 				mp->in_boundary = 0;
 			}
 		} else
 		if( '\n' == ch &&
 		    '\r' == mp->req->query.prev_ch[1] ) {
-			debug_printf("<LF");
 			if( '\r' == mp->req->query.prev_ch[3] && 
 			    '\n' == mp->req->query.prev_ch[2] ) {
-				debug_printf("|3>");
 				mp->replayhead =
 				mp->in_boundary = 3;
 			} else {
-				debug_printf("|1>");
 				mp->replayhead = 
 				mp->in_boundary = 1;
 			}
@@ -983,38 +975,20 @@ int16_t picohttpMultipartGetch(
 		    '\n' == mp->req->query.prev_ch[1] &&
 		    '\r' == mp->req->query.prev_ch[4] &&
 		    '\n' == mp->req->query.prev_ch[3] ) {
-			debug_printf("<-4>");
 			mp->replayhead =
 			mp->in_boundary = 4;
 		}
 
 		while( 0 <= ch ) {
-
-		switch(ch) {
-		case '\r':
-			debug_printf("<CR>"); break;
-		case '\n':
-			debug_printf("<LF>"); break;
-		default:
-			debug_putc(ch); break;
-		}
-
 			if( mp->req->query.multipartboundary[mp->in_boundary] == ch ) {
 				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
-					/* In case of a match there still might be some
-					 * characters consumed, which we must return.
-					 * For this we properly adjust the replay mechanism.
-					 *
-					 * TODO!
-					 */
-
 					mp->in_boundary = 0;
 					mp->replay = 0;
 					/* matched boundary */
-					char trail[2];
+					char trail[2] = {0, 0};
 					for(int i=0; i<2; i++) {
 						trail[i] = picohttpGetch(mp->req);
-						if( 0 > trail[1] )
+						if( 0 > trail[i] )
 							return -1;
 					}
 				
@@ -1052,14 +1026,11 @@ int16_t picohttpMultipartGetch(
 				 * is a nasty, convoluted state machine
 				 */
 					if( '\r' == ch ) {
-						debug_printf("[CR|");
 						if( '\r' == mp->req->query.prev_ch[2] && 
 						    '\n' == mp->req->query.prev_ch[1] ) {
-							debug_printf("2]");
 							mp->replay = mp->in_boundary - 3;
 							mp->in_boundary = 3;
 						} else {
-							debug_printf("0]");
 							mp->replay = mp->in_boundary - 1;
 							mp->in_boundary = 1;
 						}
@@ -1068,14 +1039,11 @@ int16_t picohttpMultipartGetch(
 					} else
 					if( '\n' == ch &&
 					    '\r' == mp->req->query.prev_ch[1] ) {
-						debug_printf("[LF");
 						if( '\r' == mp->req->query.prev_ch[3] && 
 						    '\n' == mp->req->query.prev_ch[2] ) {
-							debug_printf("|3]");
 							mp->replay = mp->in_boundary - 4;
 							mp->in_boundary = 4;
 						} else {
-							debug_printf("|1]");
 							mp->replay = mp->in_boundary - 2;
 							mp->in_boundary = 2;
 						}
@@ -1087,15 +1055,12 @@ int16_t picohttpMultipartGetch(
 					    '\n' == mp->req->query.prev_ch[1] &&
 					    '\r' == mp->req->query.prev_ch[4] &&
 					    '\n' == mp->req->query.prev_ch[3] ) {
-						debug_printf("[-4]");
 						mp->replay = mp->in_boundary - 4;
 						mp->in_boundary = 4;
 					} else {
 						mp->replay = mp->in_boundary;
 						mp->in_boundary = 0;
 					}
-
-					debug_printf("\nreplayhead %d-->%d: ", mp->replayhead, mp->replay);
 					ch = mp->req->query.multipartboundary[mp->replayhead++];
 				}
 				return ch;
