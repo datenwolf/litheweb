@@ -329,15 +329,80 @@ int16_t picohttpGetch(struct picohttpRequest * const req)
 
 int picohttpRead(struct picohttpRequest * const req, size_t len, char * const buf)
 {
-	/* TODO: skipping over Chunked Transfer Boundaries
+	/* skipping over Chunked Transfer Boundaries
 	 * if Chunked Transfer Encoding is used */
-	int r = picohttpIoRead(req->ioops, len, buf);
+	if(req->query.transferencoding == PICOHTTP_CODING_CHUNKED ) {
+		if( !req->query.chunklength ) {
+			int16_t ch;
+			/* this is a new chunk;
+			 * read the length and skip to after <CR><LF> */
+			if( 0 > (ch = picohttpIoGetch(req->ioops)) ) {
+				return -1;
+			}
+			uint64_t len;
+			if( 0 > (ch = picohttpIoB10ToU64(
+					&len,
+					req->ioops,
+					ch))
+			) {
+				return ch;
+			}
+			if( 0 > (ch = picohttpIoSkipOverCRLF(req->ioops, ch)) ) {
+				return ch;
+			}
+			req->query.chunklength = len;
+			return ch;
+		}
 
+		if( req->query.chunklength <= req->received_octets ) {
+			/* If this happens the data is corrupted, or
+			 * the client is nonconforming, or an attack is
+			 * underway, or something entierely different,
+			 * or all of that.
+			 * Abort processing the query!
+			 */
+			return -1;
+		}
+	}
+
+	if( req->received_octets + len > req->query.chunklength ) {
+		len = req->query.chunklength - req->received_octets;
+	}
+
+	int r = picohttpIoRead(req->ioops, len, buf);
 	if( 5 < r ) {
 		memmove(req->query.prev_ch + r, req->query.prev_ch, 5-r);
 		memcpy(req->query.prev_ch, buf, r);
 	} else if (0 < r) {
 		memcpy(req->query.prev_ch, buf + len - 5, 5);
+	}
+
+	if(req->query.transferencoding == PICOHTTP_CODING_CHUNKED ) {
+		if( !req->query.chunklength <= req->received_octets ) {
+			int16_t ch;
+			/* end of chunk;
+			 * skip over <CR><LF>, make sure the trailing '0' is
+			 * there and read the headers, err, I mean footers
+			 * (whatever, the header processing code will do for 
+			 * chunk footers just fine).
+			 */
+			if( '0' != (ch = picohttpIoGetch(req->ioops)) ) {
+				return -1;
+			}
+			if( 0 > (ch = picohttpIoGetch(req->ioops)) ) {
+				return -1;
+			}
+			if( 0 > (ch = picohttpProcessHeaders(
+					req,
+					NULL, NULL,
+					ch))
+			) {
+				return ch;
+			}
+			
+			req->received_octets =
+			req->query.chunklength = 0;
+		}
 	}
 
 	return r;
