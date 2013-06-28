@@ -56,6 +56,14 @@ static char const PICOHTTP_STR_NAME__[] = " name=\"";
 
 static char const PICOHTTP_STR_CHUNKED[] = "chunked";
 
+/* compilation unit local function forward declarations */
+static int16_t picohttpProcessHeaders (
+	struct picohttpRequest * const req,
+	picohttpHeaderFieldCallback headerfieldcallback,
+	void * const data,
+	int16_t ch );
+
+/* compilation unit local helper functions */
 #if !defined(PICOHTTP_CONFIG_HAVE_LIBDJB)
 /* Number formating functions modified from libdjb by
  * Daniel J. Bernstein, packaged at http://www.fefe.de/djb/
@@ -196,6 +204,23 @@ static int16_t picohttpIoB10ToU8 (
 	return ch;
 }
 
+static int16_t picohttpIoB10ToU64 (
+	uint64_t *i,
+	struct picohttpIoOps const * const ioops,
+	int16_t ch )
+{
+	if( !ch )
+		ch = picohttpIoGetch(ioops);
+
+	while( ch >= '0' && ch <= '9' ) {
+		*i *= 10;
+		*i += (ch & 0x0f);
+		ch = picohttpIoGetch(ioops);
+	}
+
+	return ch;
+}
+
 static int16_t picohttpIoGetPercentCh(
 	struct picohttpIoOps const * const ioops )
 {
@@ -228,13 +253,75 @@ static int16_t picohttpIoGetPercentCh(
 
 int16_t picohttpGetch(struct picohttpRequest * const req)
 {
-	/* TODO: skipping over Chunked Transfer Boundaries
+	int16_t ch;
+	/* skipping over Chunked Transfer Boundaries
 	 * if Chunked Transfer Encoding is used */
-	uint16_t ch = picohttpIoGetch(req->ioops);
+	if(req->query.transferencoding == PICOHTTP_CODING_CHUNKED ) {
+		if( !req->query.chunklength ) {
+			/* this is a new chunk;
+			 * read the length and skip to after <CR><LF> */
+			if( 0 > (ch = picohttpIoGetch(req->ioops)) ) {
+				return -1;
+			}
+			uint64_t len;
+			if( 0 > (ch = picohttpIoB10ToU64(
+					&len,
+					req->ioops,
+					ch))
+			) {
+				return ch;
+			}
+			if( 0 > (ch = picohttpIoSkipOverCRLF(req->ioops, ch)) ) {
+				return ch;
+			}
+			req->query.chunklength = len;
+			return ch;
+		}
 
-	if( 0 <= ch ) {
+		if( req->query.chunklength <= req->received_octets ) {
+			/* If this happens the data is corrupted, or
+			 * the client is nonconforming, or an attack is
+			 * underway, or something entierely different,
+			 * or all of that.
+			 * Abort processing the query!
+			 */
+			return -1;
+		}
+	}
+
+	if( 0 <= (ch = picohttpIoGetch(req->ioops)) ) {
 		memmove(req->query.prev_ch + 1, req->query.prev_ch, 4);
 		req->query.prev_ch[0] = ch;
+		req->received_octets++;
+	} else {
+		return ch;
+	}
+
+	if(req->query.transferencoding == PICOHTTP_CODING_CHUNKED ) {
+		if( !req->query.chunklength <= req->received_octets ) {
+			/* end of chunk;
+			 * skip over <CR><LF>, make sure the trailing '0' is
+			 * there and read the headers, err, I mean footers
+			 * (whatever, the header processing code will do for 
+			 * chunk footers just fine).
+			 */
+			if( '0' != (ch = picohttpIoGetch(req->ioops)) ) {
+				return -1;
+			}
+			if( 0 > (ch = picohttpIoGetch(req->ioops)) ) {
+				return -1;
+			}
+			if( 0 > (ch = picohttpProcessHeaders(
+					req,
+					NULL, NULL,
+					ch))
+			) {
+				return ch;
+			}
+			
+			req->received_octets =
+			req->query.chunklength = 0;
+		}
 	}
 
 	return ch;
@@ -634,6 +721,7 @@ static void picohttpProcessHeaderField(
 			            PICOHTTP_STR_CHUNKED,
 			            sizeof(PICOHTTP_STR_CHUNKED)-1)) {
 				req->query.transferencoding = PICOHTTP_CODING_CHUNKED;
+				req->query.chunklength = 0;
 			}
 			return;
 		}
@@ -679,7 +767,7 @@ static int16_t picohttpProcessHeaders (
 					ch = picohttpIoGetch(req->ioops);
 				}
 			} else {
-				if( *headername && *headervalue )
+				if( *headername && *headervalue && headerfieldcallback )
 					headerfieldcallback(
 						data,
 						headername,
@@ -718,7 +806,7 @@ static int16_t picohttpProcessHeaders (
 			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 	}
-	if( *headername && *headervalue )
+	if( *headername && *headervalue && headerfieldcallback)
 		headerfieldcallback(
 			data,
 			headername,
@@ -763,6 +851,7 @@ void picohttpProcessRequest (
 	request.httpversion.minor = 0;
 	request.sent.header = 0;
 	request.sent.octets = 0;
+	request.received_octets = 0;
 
 	request.method = picohttpProcessRequestMethod(ioops);
 	if( !request.method ) {
@@ -1035,7 +1124,7 @@ int16_t picohttpMultipartGetch(
 				 * preceeded by some <CR><LF>* sequence that would
 				 * allow to be a valid multipart boundary.
 				 * In that case the exact replay parameters depend
-				 * on the exact combination.
+				 * on the specific combination.
 				 *
 				 * The replay code above also emits the last character
 				 * read from IO, but in this case that character is
