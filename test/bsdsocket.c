@@ -107,12 +107,13 @@ void rhRoot(struct picohttpRequest *req)
 
 	char http_test[] =
 "<html><head><title>handling request /</title></head><body>\n"
-"<a href=\"/test\">/test</a>"
-"<form action=\"/upload\" enctype=\"multipart/form-data\" method=\"post\">"
-"<label for=\"file1\">File: </label><input type=\"file\" name=\"file1\"></input>"
-"<label for=\"file2\">File: </label><input type=\"file\" name=\"file2\"></input>"
-"<input type=\"submit\" value=\"Upload\"></input>"
-"</form>"
+"<a href=\"/test\">/test</a>\n"
+"<form action=\"/upload\" enctype=\"multipart/form-data\" method=\"post\">\n"
+"<label for=\"name\">Name: </label><input type=\"text\" name=\"name\"></input><br/>\n"
+"<label for=\"file1\">File: </label><input type=\"file\" name=\"file1\"></input><br/>\n"
+"<label for=\"file2\">File: </label><input type=\"file\" name=\"file2\"></input><br/>\n"
+"<input type=\"submit\" value=\"Upload\"></input>\n"
+"</form>\n"
 "</body></html>\n";
 
 	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
@@ -141,8 +142,21 @@ void rhUpload(struct picohttpRequest *req)
 
 	char http_test[] = "handling request /upload";
 
-	struct picohttpMultipart mp;
-	picohttpMultipartNext(req, &mp);
+	struct picohttpMultipart mp = picohttpMultipartStart(req);
+	
+	while( !picohttpMultipartNext(&mp) ) {
+		fprintf(stderr, "processing form field \"%s\"\n", mp.disposition.name);
+		for(int16_t ch = picohttpMultipartGetch(&mp);
+		    0 <= ch;
+		    ch = picohttpMultipartGetch(&mp) ) {
+			fputc(ch, stderr);
+		}
+		if( !mp.finished ) {
+			break;
+		}
+	}
+	if( !mp.finished ) {
+	}
 
 	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
 	if(req->urltail) {
@@ -206,7 +220,7 @@ int main(int argc, char *argv[])
 
 		struct picohttpURLRoute routes[] = {
 			{ "/test", 0, rhTest, 16, PICOHTTP_METHOD_GET },
-			{ "/upload|", 0, rhUpload, 0, PICOHTTP_METHOD_GET },
+			{ "/upload", 0, rhUpload, 16, PICOHTTP_METHOD_POST },
 			{ "/|", 0, rhRoot, 0, PICOHTTP_METHOD_GET },
 			{ NULL, 0, 0, 0, 0 }
 		};

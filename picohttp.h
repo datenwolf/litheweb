@@ -7,32 +7,29 @@
 
 /* max 70 for boundary + 4 chars for "<CR><LF>--" */
 #define PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN 74
-#define PICOHTTP_DISPOSITION_NAME_MAX 16
-
-#define PICOHTTP_MAJORVERSION(x) ( (x & 0x7f00) >> 8 )
-#define PICOHTTP_MINORVERSION(x) ( (x & 0x007f) )
+#define PICOHTTP_DISPOSITION_NAME_MAX 48
 
 #define PICOHTTP_METHOD_GET  1
 #define PICOHTTP_METHOD_HEAD 2
-#define PICOHTTP_METHOD_POST 3
+#define PICOHTTP_METHOD_POST 4
 
-#define PICOHTTP_CONTENTTYPE_APPLICATION	0x0000
-#define PICOHTTP_CONTENTTYPE_APPLICATION_OCTETSTREAM 0x0000
+#define PICOHTTP_CONTENTTYPE_APPLICATION	0x1000
+#define PICOHTTP_CONTENTTYPE_APPLICATION_OCTETSTREAM 0x1000
 
-#define PICOHTTP_CONTENTTYPE_AUDIO		0x1000
-#define PICOHTTP_CONTENTTYPE_IMAGE		0x2000
-#define PICOHTTP_CONTENTTYPE_MESSAGE		0x3000
-#define PICOHTTP_CONTENTTYPE_MODEL		0x4000
+#define PICOHTTP_CONTENTTYPE_AUDIO		0x2000
+#define PICOHTTP_CONTENTTYPE_IMAGE		0x3000
+#define PICOHTTP_CONTENTTYPE_MESSAGE		0x4000
+#define PICOHTTP_CONTENTTYPE_MODEL		0x5000
 
-#define PICOHTTP_CONTENTTYPE_MULTIPART		0x5000
-#define PICOHTTP_CONTENTTYPE_MULTIPART_FORMDATA	0x5004
+#define PICOHTTP_CONTENTTYPE_MULTIPART		0x6000
+#define PICOHTTP_CONTENTTYPE_MULTIPART_FORMDATA	0x6004
 
-#define PICOHTTP_CONTENTTYPE_TEXT		0x6000
-#define PICOHTTP_CONTENTTYPE_TEXT_CSV		0x6003
-#define PICOHTTP_CONTENTTYPE_TEXT_HTML		0x6004
-#define PICOHTTP_CONTENTTYPE_TEXT_PLAIN		0x6006
+#define PICOHTTP_CONTENTTYPE_TEXT		0x7000
+#define PICOHTTP_CONTENTTYPE_TEXT_CSV		0x7003
+#define PICOHTTP_CONTENTTYPE_TEXT_HTML		0x7004
+#define PICOHTTP_CONTENTTYPE_TEXT_PLAIN		0x7006
 
-#define PICOHTTP_CONTENTTYPE_VIDEO		0x7000
+#define PICOHTTP_CONTENTTYPE_VIDEO		0x8000
 
 #define PICOHTTP_CODING_IDENTITY 0
 #define PICOHTTP_CODING_COMPRESS 1
@@ -52,7 +49,7 @@
 struct picohttpIoOps {
 	int (*read)(size_t /*count*/, char* /*buf*/, void*);
 	int (*write)(size_t /*count*/, char const* /*buf*/, void*);
-	int16_t (*getch)(void*); // returns -1 on error
+	int16_t (*getch)(void*); // returns negative value on error
 	int (*putch)(char, void*);
 	int (*flush)(void*);
 	void *data;
@@ -158,7 +155,7 @@ struct picohttpMultipart {
 };
 
 typedef void (*picohttpHeaderFieldCallback)(
-	struct picohttpRequest *req,
+	void * const data,
 	char const *headername,
 	char const *headervalue);
 
@@ -179,11 +176,18 @@ int picohttpResponseWrite (
 
 int16_t picohttpGetch(struct picohttpRequest * const req);
 
+struct picohttpMultipart picohttpMultipartStart(
+	struct picohttpRequest * const req);
+
 int picohttpMultipartNext(
-	struct picohttpRequest * const req,
 	struct picohttpMultipart * const mp);
 
 int16_t picohttpMultipartGetch(
 	struct picohttpMultipart * const mp);
+
+int picohttpMultipartRead(
+	struct picohttpMultipart * const mp,
+	size_t len,
+	char * const buf);
 
 #endif/*PICOHTTP_H_HEADERGUARD*/
