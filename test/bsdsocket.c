@@ -145,7 +145,7 @@ void rhUpload(struct picohttpRequest *req)
 	struct picohttpMultipart mp = picohttpMultipartStart(req);
 	
 	while( !picohttpMultipartNext(&mp) ) {
-		fprintf(stderr, "processing form field \"%s\"\n", mp.disposition.name);
+		fprintf(stderr, "\nprocessing form field \"%s\"\n", mp.disposition.name);
 		for(int16_t ch = picohttpMultipartGetch(&mp);
 		    0 <= ch;
 		    ch = picohttpMultipartGetch(&mp) ) {
