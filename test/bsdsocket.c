@@ -157,6 +157,7 @@ void rhUpload(struct picohttpRequest *req)
 
 			default:
 				fputc(ch, stderr);
+			}
 		}
 		if( !mp.finished ) {
 			break;
