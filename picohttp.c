@@ -149,10 +149,12 @@ static int16_t picohttpIoSkipSpace (
 	struct picohttpIoOps const * const ioops,
 	int16_t ch)
 {
-	for(;;ch = 0) {
-		if(!ch)
+	for(;;ch = -1) {
+		if(0 > ch) {
 			ch = picohttpIoGetch(ioops);
-		if( 0 >= ch ||
+		}
+
+		if( 0 > ch ||
 		    ( ' ' != ch && '\t' != ch ) )
 			break;
 	}
@@ -163,12 +165,15 @@ static int16_t picohttpIoSkipOverCRLF (
 	struct picohttpIoOps const * const ioops,
 	int16_t ch)
 {
-	for(;;ch = 0) {
-		if(!ch)
+	for(;;ch = -1) {
+		if(0 > ch) {
 			ch = picohttpIoGetch(ioops);
+		}
+
 		if( ch < 0 ) {
 			return -1;
 		}
+
 		if( ch == '\n' ) {
 			break;
 		}
@@ -192,7 +197,7 @@ static int16_t picohttpIoB10ToU8 (
 	struct picohttpIoOps const * const ioops,
 	int16_t ch )
 {
-	if( !ch )
+	if( 0 > ch )
 		ch = picohttpIoGetch(ioops);
 
 	while( ch >= '0' && ch <= '9' ) {
@@ -209,7 +214,7 @@ static int16_t picohttpIoB10ToU64 (
 	struct picohttpIoOps const * const ioops,
 	int16_t ch )
 {
-	if( !ch )
+	if( 0 > ch )
 		ch = picohttpIoGetch(ioops);
 
 	while( ch >= '0' && ch <= '9' ) {
@@ -677,7 +682,7 @@ static int16_t picohttpProcessHTTPVersion (
 		ch = picohttpIoB10ToU8(
 			&req->httpversion.minor,
 			req->ioops,
-			0 );
+			-1 );
 		if( ch < 0 ) {
 			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
@@ -928,7 +933,7 @@ void picohttpProcessRequest (
 		goto http_error;
 	}
 
-	if( 0 > (ch = picohttpIoSkipSpace(ioops, 0)) ) {
+	if( 0 > (ch = picohttpIoSkipSpace(ioops, -1)) ) {
 		ch = -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		goto http_error;
 	}
@@ -1111,7 +1116,7 @@ int picohttpResponseWrite (
 int16_t picohttpMultipartGetch(
 	struct picohttpMultipart * const mp)
 {
-	uint16_t ch;
+	int16_t ch;
 	if( mp->finished ) {
 		return -1;
 	} else
