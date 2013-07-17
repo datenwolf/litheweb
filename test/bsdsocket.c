@@ -149,7 +149,14 @@ void rhUpload(struct picohttpRequest *req)
 		for(int16_t ch = picohttpMultipartGetch(&mp);
 		    0 <= ch;
 		    ch = picohttpMultipartGetch(&mp) ) {
-			fputc(ch, stderr);
+			switch(ch) {
+			case '\r':
+				fputs("--- <CR> ---\n", stderr); break;
+			case '\n':
+				fputs("--- <LF> ---\n", stderr); break;
+
+			default:
+				fputc(ch, stderr);
 		}
 		if( !mp.finished ) {
 			break;
