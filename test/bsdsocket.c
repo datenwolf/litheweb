@@ -151,9 +151,9 @@ void rhUpload(struct picohttpRequest *req)
 		    ch = picohttpMultipartGetch(&mp) ) {
 			switch(ch) {
 			case '\r':
-				fputs("--- <CR> ---\n", stderr); break;
+				fputs("[CR]", stderr); break;
 			case '\n':
-				fputs("--- <LF> ---\n", stderr); break;
+				fputs("[LF]", stderr); break;
 
 			default:
 				fputc(ch, stderr);

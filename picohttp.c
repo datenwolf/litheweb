@@ -1124,11 +1124,13 @@ int picohttpMultipartGetch(
 		if( mp->replayhead < mp->replay ) {
 			ch = mp->req->query.multipartboundary[mp->replayhead];
 			mp->replayhead++;
+			debug_printf("replay head: %0.2x\n", ch);
 			return ch;
 		} else {
 			ch = mp->req->query.prev_ch[0];
 			mp->replay = 0;
 			mp->replayhead = 0;
+			debug_printf("replay prev: %0.2x\n", ch);
 			return ch;
 		}
 	} else {
@@ -1143,16 +1145,29 @@ int picohttpMultipartGetch(
 	 * a <CR><LF> sequence.
 	 */
 
+		switch(ch) {
+		case '\r':
+			debug_printf("(CR)", ch); break;
+		case '\n':
+			debug_printf("(LF)", ch); break;
+		default:
+			debug_printf("(%c)", ch);
+		}
 		if( '\r' == ch ) {
 			mp->replayhead =
 			mp->in_boundary = 0;
-			if( '\r' == mp->req->query.prev_ch[1] )
+			if( '\r' == mp->req->query.prev_ch[1] ) {
+				debug_printf("<CR|run>");
 				return '\r';
+			} else {
+				debug_printf("<CR>");
+			}
 		} else
 		if( '\n' == ch &&
 		    '\r' == mp->req->query.prev_ch[1] ) {
 			mp->replayhead = 
 			mp->in_boundary = 1;
+			debug_printf("<CR><LF>");
 		} else
 		if(  '-' == ch &&
 		    '\n' == mp->req->query.prev_ch[1] &&
@@ -1160,12 +1175,14 @@ int picohttpMultipartGetch(
 		) {
 			mp->replayhead =
 			mp->in_boundary = 2;
+			debug_printf("<CR><LF>-");
 		} 
 
 		while( 0 <= ch ) {
 
 			if( mp->req->query.multipartboundary[mp->in_boundary] == ch ) {
 				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
+					debug_printf("{|}", ch);
 					mp->in_boundary = 0;
 					mp->replay = 0;
 					/* matched boundary */
@@ -1188,8 +1205,10 @@ int picohttpMultipartGetch(
 
 					return -1;
 				} 
+				debug_printf("{#}", ch);
 				mp->in_boundary++;
 			} else {
+				debug_printf("{_}", ch);
 				if( mp->in_boundary ) {
 
 				/* In case the mismatch was due to a <CR> or <LF>
