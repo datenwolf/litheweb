@@ -57,11 +57,11 @@ static char const PICOHTTP_STR_NAME__[] = " name=\"";
 static char const PICOHTTP_STR_CHUNKED[] = "chunked";
 
 /* compilation unit local function forward declarations */
-static int16_t picohttpProcessHeaders (
+static int picohttpProcessHeaders (
 	struct picohttpRequest * const req,
 	picohttpHeaderFieldCallback headerfieldcallback,
 	void * const data,
-	int16_t ch );
+	int ch );
 
 /* compilation unit local helper functions */
 #if !defined(PICOHTTP_CONFIG_HAVE_LIBDJB)
@@ -99,7 +99,7 @@ static size_t picohttp_fmt_int(char *dest,int i) {
 #define picohttp_fmt_int fmt_long
 #endif
 
-static char const * const picohttpStatusString(int16_t code)
+static char const * const picohttpStatusString(int code)
 {
 	switch(code) {
 	case 200:
@@ -121,14 +121,14 @@ static char const * const picohttpStatusString(int16_t code)
 }
 
 void picohttpStatusResponse(
-	struct picohttpRequest *req, int16_t status )
+	struct picohttpRequest *req, int status )
 {
 	req->status = status;
 	char const * const c = picohttpStatusString(req->status);
 	picohttpResponseWrite(req, strlen(c), c);
 }
 
-static uint8_t picohttpIsCRLF(int16_t ch)
+static uint8_t picohttpIsCRLF(int ch)
 {
 	switch(ch) {
 	case '\r':
@@ -138,16 +138,16 @@ static uint8_t picohttpIsCRLF(int16_t ch)
 	return 0;
 }
 
-static uint8_t picohttpIsLWS(int16_t ch)
+static uint8_t picohttpIsLWS(int ch)
 {
 	return 
 		picohttpIsCRLF(ch) ||
 		' ' == ch || '\t' == ch;
 }
 
-static int16_t picohttpIoSkipSpace (
+static int picohttpIoSkipSpace (
 	struct picohttpIoOps const * const ioops,
-	int16_t ch)
+	int ch)
 {
 	for(;;ch = -1) {
 		if(0 > ch) {
@@ -161,9 +161,9 @@ static int16_t picohttpIoSkipSpace (
 	return ch;
 }
 
-static int16_t picohttpIoSkipOverCRLF (
+static int picohttpIoSkipOverCRLF (
 	struct picohttpIoOps const * const ioops,
-	int16_t ch)
+	int ch)
 {
 	for(;;ch = -1) {
 		if(0 > ch) {
@@ -192,10 +192,10 @@ static int16_t picohttpIoSkipOverCRLF (
 	return ch;
 }
 
-static int16_t picohttpIoB10ToU8 (
+static int picohttpIoB10ToU8 (
 	uint8_t *i,
 	struct picohttpIoOps const * const ioops,
-	int16_t ch )
+	int ch )
 {
 	if( 0 > ch )
 		ch = picohttpIoGetch(ioops);
@@ -209,10 +209,10 @@ static int16_t picohttpIoB10ToU8 (
 	return ch;
 }
 
-static int16_t picohttpIoB10ToU64 (
+static int picohttpIoB10ToU64 (
 	uint64_t *i,
 	struct picohttpIoOps const * const ioops,
-	int16_t ch )
+	int ch )
 {
 	if( 0 > ch )
 		ch = picohttpIoGetch(ioops);
@@ -226,11 +226,11 @@ static int16_t picohttpIoB10ToU64 (
 	return ch;
 }
 
-static int16_t picohttpIoGetPercentCh(
+static int picohttpIoGetPercentCh(
 	struct picohttpIoOps const * const ioops )
 {
 	char ch=0;
-	int16_t chr;
+	int chr;
 	if( 0 > (chr = picohttpIoGetch(ioops)))
 		return chr;
 
@@ -256,9 +256,9 @@ static int16_t picohttpIoGetPercentCh(
 	return ch;
 }
 
-int16_t picohttpGetch(struct picohttpRequest * const req)
+int picohttpGetch(struct picohttpRequest * const req)
 {
-	int16_t ch;
+	int ch;
 	/* skipping over Chunked Transfer Boundaries
 	 * if Chunked Transfer Encoding is used */
 	if(req->query.transferencoding == PICOHTTP_CODING_CHUNKED ) {
@@ -338,7 +338,7 @@ int picohttpRead(struct picohttpRequest * const req, size_t len, char * const bu
 	 * if Chunked Transfer Encoding is used */
 	if(req->query.transferencoding == PICOHTTP_CODING_CHUNKED ) {
 		if( !req->query.chunklength ) {
-			int16_t ch;
+			int ch;
 			/* this is a new chunk;
 			 * read the length and skip to after <CR><LF> */
 			if( 0 > (ch = picohttpIoGetch(req->ioops)) ) {
@@ -384,7 +384,7 @@ int picohttpRead(struct picohttpRequest * const req, size_t len, char * const bu
 
 	if(req->query.transferencoding == PICOHTTP_CODING_CHUNKED ) {
 		if( !req->query.chunklength <= req->received_octets ) {
-			int16_t ch;
+			int ch;
 			/* end of chunk;
 			 * skip over <CR><LF>, make sure the trailing '0' is
 			 * there and read the headers, err, I mean footers
@@ -470,10 +470,10 @@ static int8_t picohttpMatchRoute(
 	return 0;
 }
 
-static int16_t picohttpProcessRequestMethod (
+static int picohttpProcessRequestMethod (
 	struct picohttpIoOps const * const ioops )
 {
-	int16_t method = 0;
+	int method = 0;
 
 	/* Poor man's string matching tree; trade RAM for code */
 	switch( picohttpIoGetch(ioops) ) {
@@ -533,10 +533,10 @@ static int16_t picohttpProcessRequestMethod (
 	return method;
 }
 
-static int16_t picohttpProcessURL (
+static int picohttpProcessURL (
 	struct picohttpRequest * const req,
 	size_t const url_max_length,
-	int16_t ch )
+	int ch )
 {
 	/* copy url up to the first query component; note that this is not
 	 * fully compliant to RFC 3986, which permits query components in each
@@ -572,9 +572,9 @@ static int16_t picohttpProcessURL (
 	return ch;
 }
 
-static int16_t picohttpProcessQuery (
+static int picohttpProcessQuery (
 	struct picohttpRequest * const req,
-	int16_t ch )
+	int ch )
 {
 	size_t var_max_length = 0;
 	if(req->route->get_vars) {
@@ -651,9 +651,9 @@ static int16_t picohttpProcessQuery (
 	return ch;
 }
 
-static int16_t picohttpProcessHTTPVersion (
+static int picohttpProcessHTTPVersion (
 	struct picohttpRequest * const req,
-	int16_t ch )
+	int ch )
 {
 
 	if( !picohttpIsCRLF(ch) ) {
@@ -703,10 +703,10 @@ static int16_t picohttpProcessHTTPVersion (
 	return ch;
 }
 
-static uint16_t picohttpProcessContentType(
+static int picohttpProcessContentType(
 	char const **contenttype)
 {
-	uint16_t ct = 0;
+	int ct = 0;
 	if(!strncmp(*contenttype,
 	            PICOHTTP_STR_APPLICATION_, sizeof(PICOHTTP_STR_APPLICATION_)-1)) {
 		ct = PICOHTTP_CONTENTTYPE_APPLICATION;
@@ -799,11 +799,11 @@ static void picohttpProcessHeaderField(
 	}
 }
 
-static int16_t picohttpProcessHeaders (
+static int picohttpProcessHeaders (
 	struct picohttpRequest * const req,
 	picohttpHeaderFieldCallback headerfieldcallback,
 	void * const data,
-	int16_t ch )
+	int ch )
 {
 #define PICOHTTP_HEADERNAME_MAX_LEN 32
 	char headername[PICOHTTP_HEADERNAME_MAX_LEN+1] = {0,};
@@ -890,7 +890,7 @@ void picohttpProcessRequest (
 	struct picohttpURLRoute const * const routes )
 {
 
-	int16_t ch;
+	int ch;
 	struct picohttpRequest request = {0,};
 
 	size_t url_max_length = 0;
@@ -1113,10 +1113,10 @@ int picohttpResponseWrite (
 	return len;
 }
 
-int16_t picohttpMultipartGetch(
+int picohttpMultipartGetch(
 	struct picohttpMultipart * const mp)
 {
-	int16_t ch;
+	int ch;
 	if( mp->finished ) {
 		return -1;
 	} else
@@ -1132,6 +1132,8 @@ int16_t picohttpMultipartGetch(
 			return ch;
 		}
 	} else {
+		mp->replay = 0;
+
 		ch = picohttpGetch(mp->req);
 
 	/* picohttp's query and header parsing is forgiving
@@ -1141,10 +1143,11 @@ int16_t picohttpMultipartGetch(
 	 * a <CR><LF> sequence.
 	 */
 
-		mp->replay = 0;
 		if( '\r' == ch ) {
 			mp->replayhead =
 			mp->in_boundary = 0;
+			if( '\r' == mp->req->query.prev_ch[1] )
+				return '\r';
 		} else
 		if( '\n' == ch &&
 		    '\r' == mp->req->query.prev_ch[1] ) {
@@ -1157,7 +1160,7 @@ int16_t picohttpMultipartGetch(
 		) {
 			mp->replayhead =
 			mp->in_boundary = 2;
-		}
+		} 
 
 		while( 0 <= ch ) {
 
@@ -1252,7 +1255,7 @@ int picohttpMultipartRead(
  *       Probably a lot of code would be shared with the ...Getch variant
  *       and could be placed into a commonly used function.
  */
-	int16_t ch;
+	int ch;
 	size_t i;
 	for(i = 0; i < len; i++) {
 		if( 0 > (ch = picohttpMultipartGetch(mp)) ) {
@@ -1357,7 +1360,7 @@ int picohttpMultipartNext(
 	} 
 
 	for(;;) {
-		int16_t ch = picohttpMultipartGetch(mp);
+		int ch = picohttpMultipartGetch(mp);
 		if( 0 > ch ) {
 			if( 2 == mp->finished ) {
 				return -1;

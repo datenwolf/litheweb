@@ -49,7 +49,7 @@
 struct picohttpIoOps {
 	int (*read)(size_t /*count*/, char* /*buf*/, void*);
 	int (*write)(size_t /*count*/, char const* /*buf*/, void*);
-	int16_t (*getch)(void*); // returns negative value on error
+	int (*getch)(void*); // returns negative value on error
 	int (*putch)(char, void*);
 	int (*flush)(void*);
 	void *data;
@@ -88,8 +88,8 @@ struct picohttpURLRoute {
 	char const * urlhead;
 	struct picohttpVarSpec const * get_vars;
 	picohttpHandler handler;
-	uint16_t max_urltail_len;
-	int16_t allowed_methods;
+	unsigned int max_urltail_len;
+	int allowed_methods;
 };
 
 #define PICOHTTP_EPOCH_YEAR 1970
@@ -109,14 +109,14 @@ struct picohttpRequest {
 	struct picohttpVar *get_vars;
 	char *url;
 	char *urltail;
-	int16_t status;
-	int16_t method;
+	int status;
+	int method;
 	struct {
 		uint8_t major;
 		uint8_t minor;
 	} httpversion;
 	struct {
-		uint16_t contenttype;
+		int contenttype;
 		size_t contentlength;
 		uint8_t contentencoding;
 		uint8_t transferencoding;
@@ -128,7 +128,7 @@ struct picohttpRequest {
 		char const *contenttype;
 		char const *disposition;
 		struct picohttpDateTime lastmodified;
-		uint16_t max_age;
+		int max_age;
 		size_t contentlength;
 		uint8_t contentencoding;
 		uint8_t transferencoding;
@@ -143,7 +143,7 @@ struct picohttpRequest {
 struct picohttpMultipart {
 	struct picohttpRequest *req;
 	uint8_t finished;
-	uint16_t contenttype;
+	int contenttype;
 	struct {
 		char name[PICOHTTP_DISPOSITION_NAME_MAX+1];
 	} disposition;
@@ -162,7 +162,7 @@ void picohttpProcessRequest(
 	struct picohttpURLRoute const * const routes );
 
 void picohttpStatusResponse(
-	struct picohttpRequest *req, int16_t status );
+	struct picohttpRequest *req, int status );
 
 int picohttpResponseSendHeader (
 	struct picohttpRequest * const req );
@@ -172,7 +172,7 @@ int picohttpResponseWrite (
 	size_t len,
 	char const *buf );
 
-int16_t picohttpGetch(struct picohttpRequest * const req);
+int picohttpGetch(struct picohttpRequest * const req);
 
 struct picohttpMultipart picohttpMultipartStart(
 	struct picohttpRequest * const req);
@@ -180,7 +180,7 @@ struct picohttpMultipart picohttpMultipartStart(
 int picohttpMultipartNext(
 	struct picohttpMultipart * const mp);
 
-int16_t picohttpMultipartGetch(
+int picohttpMultipartGetch(
 	struct picohttpMultipart * const mp);
 
 int picohttpMultipartRead(

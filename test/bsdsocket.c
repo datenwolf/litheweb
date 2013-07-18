@@ -67,7 +67,7 @@ int bsdsock_write(size_t count, char const *buf, void *data)
 	return wb;
 }
 
-int16_t bsdsock_getch(void *data)
+int bsdsock_getch(void *data)
 {
 	char ch;
 	int err;
