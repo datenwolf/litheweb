@@ -1206,12 +1206,16 @@ int picohttpMultipartRead(
  *       Probably a lot of code would be shared with the ...Getch variant
  *       and could be placed into a commonly used function.
  */
+	if( mp->finished ) {
+		return -1;
+	}
+
 	int ch;
 	size_t i;
 	for(i = 0; i < len; i++) {
 		if( 0 > (ch = picohttpMultipartGetch(mp)) ) {
 			if( mp->finished )
-				return 0;
+				return i;
 			else
 				return ch;
 		}
