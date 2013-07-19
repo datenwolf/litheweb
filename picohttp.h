@@ -121,7 +121,6 @@ struct picohttpRequest {
 		uint8_t contentencoding;
 		uint8_t transferencoding;
 		unsigned char multipartboundary[PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1];
-		unsigned char prev_ch[5];
 		size_t chunklength;
 	} query;
 	struct {
