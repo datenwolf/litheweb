@@ -170,7 +170,7 @@ int picohttpResponseSendHeader (
 int picohttpResponseWrite (
 	struct picohttpRequest * const req,
 	size_t len,
-	char const *buf );
+	void const *buf );
 
 int picohttpGetch(struct picohttpRequest * const req);
 
