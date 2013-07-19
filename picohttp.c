@@ -801,8 +801,8 @@ static int picohttpProcessHeaders (
 	char headername[PICOHTTP_HEADERNAME_MAX_LEN+1] = {0,};
 #define PICOHTTP_HEADERVALUE_MAX_LEN 224
 	char headervalue[PICOHTTP_HEADERVALUE_MAX_LEN+1] = {0,};
-	char *hn;
-	char *hv;
+	char *hn = headername;
+	char *hv = headervalue;
 
 	/* TODO: Add Header handling here */
 	while( !picohttpIsCRLF(ch) ) {
@@ -1134,7 +1134,7 @@ replay:
 				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
 					mp->in_boundary = 0;
 					/* matched boundary */
-					char trail[2] = {0, 0};
+					int trail[2] = {0, 0};
 					for(int i=0; i<2; i++) {
 						trail[i] = picohttpGetch(mp->req);
 						if( 0 > trail[i] )
