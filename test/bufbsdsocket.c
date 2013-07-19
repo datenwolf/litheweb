@@ -6,81 +6,118 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <assert.h>
 
 #include <unistd.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <netinet/ip.h>
+#include <poll.h>
 
 #include "../picohttp.h"
 
-int bsdsock_read(size_t count, char *buf, void *data)
+#define SENDBUF_LEN 256
+
+struct bufbsdsockData {
+	char * recvbuf;
+	size_t recvbuf_len;
+	size_t recvbuf_pos;
+	char   sendbuf[SENDBUF_LEN];
+	size_t sendbuf_pos;
+	int    fd;
+};
+
+int bufbsdsock_read(size_t count, char *buf, void *data_)
 {
-	int fd = *((int*)data);
-	
+	struct bufbsdsockData *data = data_;
+
 	ssize_t rb = 0;
 	ssize_t r = 0;
 	do {
-		r = read(fd, buf+rb, count-rb);
-		if( 0 < r ) {
-			rb += r;
-			continue;
-		}
-		if( !r ) {
-			break;
+		size_t len = 0;
+
+		if( !data->recvbuf || 
+		    data->recvbuf_pos >= data->recvbuf_len ) {
+			if( data->recvbuf )
+				free( data->recvbuf );
+			data->recvbuf_len = 0;
+			data->recvbuf_pos = 0;
+
+			int avail = 0;
+			do {
+				struct pollfd pfd = {
+					.fd = data->fd,
+					.events = POLLIN | POLLPRI,
+					.revents = 0
+				};
+
+				int const pret = poll(&pfd, 1, -1);
+				if( 0 >= pret ) {
+					return -1;
+				}
+
+				assert(pfd.revents & (POLLIN | POLLPRI));
+
+				if( -1 == ioctl(data->fd, FIONREAD, &avail) ) {
+					perror("ioctl(FIONREAD)");
+					return -1;
+				}
+			} while( !avail );
+
+			data->recvbuf = malloc( avail);
+
+			int r;
+			while( 0 > (r = read(data->fd, data->recvbuf, avail)) ) {
+				if( EINTR == errno )
+					continue;
+
+				if( EAGAIN == errno ||
+				    EWOULDBLOCK == errno ) {
+					usleep(200);
+					continue;
+				}
+
+				return -1;
+			} 
+			data->recvbuf_len += r;
 		}
 
-		if( EAGAIN == errno ||
-		    EWOULDBLOCK == errno ) {
-			usleep(100);
-			continue;
-		}
-		return -3 + errno;
+		len = data->recvbuf_len - data->recvbuf_pos;
+		if( len > count )
+			len = count;
+
+		rb += len;
 	} while( rb < count );
 	return rb;
 }
 
-int bsdsock_write(size_t count, char const *buf, void *data)
+int bufbsdsock_write(size_t count, char const *buf, void *data)
 {
 	int fd = *((int*)data);
 	
 	ssize_t wb = 0;
 	ssize_t w = 0;
 	do {
-		w = write(fd, buf+wb, count-wb);
-		if( 0 < w ) {
-			wb += w;
-			continue;
-		}
-		if( !w ) {
-			break;
-		}
-
-		if( EAGAIN == errno ||
-		    EWOULDBLOCK == errno ) {
-			usleep(100);
-			continue;
-		}
-		return -3 + errno;
 	} while( wb < count );
 	return wb;
 }
 
-int16_t bsdsock_getch(void *data)
+int16_t bufbsdsock_getch(void *data)
 {
 	char ch;
-	if( 1 != bsdsock_read(1, &ch, data) )
+	if( 1 != bufbsdsock_read(1, &ch, data) )
 		return -1;
 	return ch;
 }
 
-int bsdsock_putch(char ch, void *data)
+int bufbsdsock_putch(char ch, void *data)
 {
-	return bsdsock_write(1, &ch, data);
+	return bufbsdsock_write(1, &ch, data);
 }
 
-int bsdsock_flush(void* data)
+int bufbsdsock_flush(void *data)
 {
 	return 0;
 }
@@ -104,7 +141,14 @@ void rhRoot(struct picohttpRequest *req)
 
 	req->response.contenttype = "text/html";
 
-	char http_test[] = "<html><head><title>handling request /</title></head>\n<body><a href=\"/test\">/test</a></body></html>\n";
+	char http_test[] =
+"<html><head><title>handling request /</title></head><body>\n"
+"<a href=\"/test\">/test</a>"
+"<form action=\"/upload\" enctype=\"multipart/form-data\" method=\"post\">"
+"<label for=\"file\">File: </label><input type=\"file\" name=\"file\"></input>"
+"<input type=\"submit\" value=\"Upload\"></input>"
+"</form>"
+"</body></html>\n";
 
 	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
 }
@@ -114,6 +158,17 @@ void rhTest(struct picohttpRequest *req)
 	fprintf(stderr, "handling request /test%s\n", req->urltail);
 
 	char http_test[] = "handling request /test";
+	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
+	if(req->urltail) {
+		picohttpResponseWrite(req, strlen(req->urltail), req->urltail);
+	}
+}
+
+void rhUpload(struct picohttpRequest *req)
+{
+	fprintf(stderr, "handling request /upload%s\n", req->urltail);
+
+	char http_test[] = "handling request /upload";
 	picohttpResponseWrite(req, sizeof(http_test)-1, http_test);
 	if(req->urltail) {
 		picohttpResponseWrite(req, strlen(req->urltail), req->urltail);
@@ -198,17 +253,18 @@ int main(int argc, char *argv[])
 		}
 
 		struct picohttpIoOps ioops = {
-			.read  = bsdsock_read,
-			.write = bsdsock_write,
-			.getch = bsdsock_getch,
-			.putch = bsdsock_putch,
-			.flush = bsdsock_flush,
+			.read  = bufbsdsock_read,
+			.write = bufbsdsock_write,
+			.getch = bufbsdsock_getch,
+			.putch = bufbsdsock_putch,
+			.flush = bufbsdsock_flush,
 			.data = &confd
 		};
 
 		struct picohttpURLRoute routes[] = {
 			{"/favicon.ico|", 0, rhFavicon, 0, PICOHTTP_METHOD_GET},
 			{ "/test", 0, rhTest, 16, PICOHTTP_METHOD_GET },
+			{ "/upload|", 0, rhUpload, 0, PICOHTTP_METHOD_GET },
 			{ "/|", 0, rhRoot, 0, PICOHTTP_METHOD_GET },
 			{ NULL, 0, 0, 0, 0 }
 		};

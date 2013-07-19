@@ -5,12 +5,31 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define PICOHTTP_MAJORVERSION(x) ( (x & 0x7f00) >> 8 )
-#define PICOHTTP_MINORVERSION(x) ( (x & 0x007f) )
+/* max 70 for boundary + 4 chars for "<CR><LF>--" */
+#define PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN 74
+#define PICOHTTP_DISPOSITION_NAME_MAX 48
 
 #define PICOHTTP_METHOD_GET  1
 #define PICOHTTP_METHOD_HEAD 2
-#define PICOHTTP_METHOD_POST 3
+#define PICOHTTP_METHOD_POST 4
+
+#define PICOHTTP_CONTENTTYPE_APPLICATION	0x1000
+#define PICOHTTP_CONTENTTYPE_APPLICATION_OCTETSTREAM 0x1000
+
+#define PICOHTTP_CONTENTTYPE_AUDIO		0x2000
+#define PICOHTTP_CONTENTTYPE_IMAGE		0x3000
+#define PICOHTTP_CONTENTTYPE_MESSAGE		0x4000
+#define PICOHTTP_CONTENTTYPE_MODEL		0x5000
+
+#define PICOHTTP_CONTENTTYPE_MULTIPART		0x6000
+#define PICOHTTP_CONTENTTYPE_MULTIPART_FORMDATA	0x6004
+
+#define PICOHTTP_CONTENTTYPE_TEXT		0x7000
+#define PICOHTTP_CONTENTTYPE_TEXT_CSV		0x7003
+#define PICOHTTP_CONTENTTYPE_TEXT_HTML		0x7004
+#define PICOHTTP_CONTENTTYPE_TEXT_PLAIN		0x7006
+
+#define PICOHTTP_CONTENTTYPE_VIDEO		0x8000
 
 #define PICOHTTP_CODING_IDENTITY 0
 #define PICOHTTP_CODING_COMPRESS 1
@@ -28,19 +47,13 @@
 #define PICOHTTP_STATUS_505_HTTP_VERSION_NOT_SUPPORTED 505
 
 struct picohttpIoOps {
-	int (*read)(size_t /*count*/, char* /*buf*/, void*);
-	int (*write)(size_t /*count*/, char const* /*buf*/, void*);
-	int16_t (*getch)(void*); // returns -1 on error
-	int (*putch)(char, void*);
+	int (*read)(size_t /*count*/, void* /*buf*/, void*);
+	int (*write)(size_t /*count*/, void const* /*buf*/, void*);
+	int (*getch)(void*); // returns negative value on error
+	int (*putch)(int, void*);
 	int (*flush)(void*);
 	void *data;
 };
-
-#define picohttpIoWrite(ioops,size,buf) (ioops->write(size, buf, ioops->data))
-#define picohttpIoRead(ioops,size,buf)  (ioops->read(size, buf, ioops->data))
-#define picohttpIoGetch(ioops)          (ioops->getch(ioops->data))
-#define picohttpIoPutch(ioops,c)        (ioops->putch(c, ioops->data))
-#define picohttpIoFlush(ioops)          (ioops->flush(ioops->data))
 
 enum picohttpVarType {
 	PICOHTTP_TYPE_UNDEFINED = 0,
@@ -75,8 +88,19 @@ struct picohttpURLRoute {
 	char const * urlhead;
 	struct picohttpVarSpec const * get_vars;
 	picohttpHandler handler;
-	uint16_t max_urltail_len;
-	int16_t allowed_methods;
+	unsigned int max_urltail_len;
+	int allowed_methods;
+};
+
+#define PICOHTTP_EPOCH_YEAR 1970
+
+struct picohttpDateTime {
+	unsigned int Y:7; /* EPOCH + 127 years */
+	unsigned int M:4;
+	unsigned int D:5;
+	unsigned int h:5;
+	unsigned int m:6;
+	unsigned int s:5; /* seconds / 2 */
 };
 
 #define PICOHTTP_EPOCH_YEAR 1980
@@ -96,39 +120,61 @@ struct picohttpRequest {
 	struct picohttpVar *get_vars;
 	char *url;
 	char *urltail;
-	int16_t status;
-	int16_t method;
+	int status;
+	int method;
 	struct {
 		uint8_t major;
 		uint8_t minor;
 	} httpversion;
 	struct {
-		char const *contenttype;
+		int contenttype;
 		size_t contentlength;
-		uint8_t contentcoding;
-		uint8_t te;
+		uint8_t contentencoding;
+		uint8_t transferencoding;
+		unsigned char multipartboundary[PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1];
+		unsigned char prev_ch[5];
+		size_t chunklength;
 	} query;
 	struct {
 		char const *contenttype;
 		char const *disposition;
 		struct picohttpDateTime lastmodified;
-		uint16_t max_age;
+		int max_age;
 		size_t contentlength;
 		uint8_t contentencoding;
 		uint8_t transferencoding;
 	} response;
+	size_t received_octets;
 	struct {
 		size_t octets;
 		uint8_t header;
 	} sent;
 };
 
+struct picohttpMultipart {
+	struct picohttpRequest *req;
+	uint8_t finished;
+	int contenttype;
+	struct {
+		char name[PICOHTTP_DISPOSITION_NAME_MAX+1];
+	} disposition;
+	int in_boundary;
+	int replay;
+	int replayhead;
+	int mismatch;
+};
+
+typedef void (*picohttpHeaderFieldCallback)(
+	void * const data,
+	char const *headername,
+	char const *headervalue);
+
 void picohttpProcessRequest(
 	struct picohttpIoOps const * const ioops,
 	struct picohttpURLRoute const * const routes );
 
 void picohttpStatusResponse(
-	struct picohttpRequest *req, int16_t status );
+	struct picohttpRequest *req, int status );
 
 int picohttpResponseSendHeader (
 	struct picohttpRequest * const req );
@@ -137,5 +183,21 @@ int picohttpResponseWrite (
 	struct picohttpRequest * const req,
 	size_t len,
 	char const *buf );
+
+int picohttpGetch(struct picohttpRequest * const req);
+
+struct picohttpMultipart picohttpMultipartStart(
+	struct picohttpRequest * const req);
+
+int picohttpMultipartNext(
+	struct picohttpMultipart * const mp);
+
+int picohttpMultipartGetch(
+	struct picohttpMultipart * const mp);
+
+int picohttpMultipartRead(
+	struct picohttpMultipart * const mp,
+	size_t len,
+	char * const buf);
 
 #endif/*PICOHTTP_H_HEADERGUARD*/
