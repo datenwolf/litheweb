@@ -295,8 +295,6 @@ int picohttpGetch(struct picohttpRequest * const req)
 	}
 
 	if( 0 <= (ch = picohttpIoGetch(req->ioops)) ) {
-		memmove(req->query.prev_ch + 1, req->query.prev_ch, 4);
-		req->query.prev_ch[0] = ch;
 		req->received_octets++;
 	} else {
 		return ch;
@@ -375,12 +373,6 @@ int picohttpRead(struct picohttpRequest * const req, size_t len, char * const bu
 	}
 
 	int r = picohttpIoRead(req->ioops, len, buf);
-	if( 5 < r ) {
-		memmove(req->query.prev_ch + r, req->query.prev_ch, 5-r);
-		memcpy(req->query.prev_ch, buf, r);
-	} else if (0 < r) {
-		memcpy(req->query.prev_ch, buf + len - 5, 5);
-	}
 
 	if(req->query.transferencoding == PICOHTTP_CODING_CHUNKED ) {
 		if( !req->query.chunklength <= req->received_octets ) {
@@ -978,12 +970,6 @@ void picohttpProcessRequest (
 		}
 	}
 
-	request.query.prev_ch[0] = '\n';
-	request.query.prev_ch[1] = '\r';
-	request.query.prev_ch[2] = 
-	request.query.prev_ch[3] = 
-	request.query.prev_ch[4] = 0;
-
 	request.status = PICOHTTP_STATUS_200_OK;
 	request.route->handler(&request);
 
@@ -1344,12 +1330,6 @@ int picohttpMultipartNext(
 				mp->mismatch = -1;
 				mp->in_boundary = 
 				mp->replayhead = 0;
-
-				mp->req->query.prev_ch[0] = '\n';
-				mp->req->query.prev_ch[1] = '\r';
-				mp->req->query.prev_ch[2] = 
-				mp->req->query.prev_ch[3] = 
-				mp->req->query.prev_ch[4] = 0;
 
 				return 0;
 			}
