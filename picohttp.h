@@ -150,6 +150,7 @@ struct picohttpMultipart {
 	int in_boundary;
 	int replay;
 	int replayhead;
+	int mismatch;
 };
 
 typedef void (*picohttpHeaderFieldCallback)(

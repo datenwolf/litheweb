@@ -1113,25 +1113,6 @@ int picohttpResponseWrite (
 	return len;
 }
 
-static void picohttpMultipartSync(
-	struct picohttpMultipart * const mp)
-{
-	if( '\r' == mp->req->query.prev_ch[0] ) {
-		mp->replayhead = 0; 
-		mp->in_boundary = 1;
-		debug_printf("mpsync <CR>\n");
-	} else
-	if( '\n' == mp->req->query.prev_ch[0] &&
-	    '\r' == mp->req->query.prev_ch[1] ) {
-		mp->replayhead = 1;
-		mp->in_boundary = 2;
-		debug_printf("mpsync <CR><LF>\n");
-	} else {
-		mp->replayhead = -1;
-		mp->in_boundary = 0;
-	}
-}
-
 int picohttpMultipartGetch(
 	struct picohttpMultipart * const mp)
 {
@@ -1139,21 +1120,19 @@ int picohttpMultipartGetch(
 	if( mp->finished ) {
 		return -1;
 	} else
-	if( 0 < mp->replay ) {
+	if( 0 <= mp->mismatch ) {
+replay:
 		if( mp->replayhead < mp->replay ) {
 			ch = mp->req->query.multipartboundary[mp->replayhead];
 			mp->replayhead++;
-			debug_printf(" >> : %0.2x\n", ch);
 			return ch;
 		} else {
-			mp->replay = 0;
-			ch = mp->req->query.prev_ch[0];
-			picohttpMultipartSync(mp);
-			debug_printf(" >>|: %0.2x\n", ch);
+			ch = mp->mismatch;
+			mp->mismatch = -1;
+			mp->replayhead = 0;
 			return ch;
 		}
 	} else {
-end_of_replay_was_CR:
 		ch = picohttpGetch(mp->req);
 
 	/* picohttp's query and header parsing is forgiving
@@ -1165,21 +1144,9 @@ end_of_replay_was_CR:
 
 		while( 0 <= ch ) {
 
-			switch(ch) {
-			case '\r':
-				debug_printf("(CR)", ch); break;
-			case '\n':
-				debug_printf("(LF)", ch); break;
-			default:
-				debug_printf("(%c)", ch);
-			}
-
-
 			if( mp->req->query.multipartboundary[mp->in_boundary] == ch ) {
 				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
-					debug_printf("{|}", ch);
 					mp->in_boundary = 0;
-					mp->replay = 0;
 					/* matched boundary */
 					char trail[2] = {0, 0};
 					for(int i=0; i<2; i++) {
@@ -1196,30 +1163,32 @@ end_of_replay_was_CR:
 				 * terminating <CR><LF> sequence... we should check for
 				 * this as well, just for completeness
 				 */
-					if(trail[0] == '-' && trail[1] == '-')
+					if(trail[0] == '-' && trail[1] == '-') {
 						mp->finished = 2;
+					}
 
 					return -1;
 				} 
-				debug_printf("{#}", ch);
 				mp->in_boundary++;
 			} else {
-				debug_printf("{_|%0.2x", ch);
-				if( mp->in_boundary ) {
-					mp->replay = mp->in_boundary;
+				if( mp->in_boundary ) 
+				{
+#if 1
 					if( '\r' == ch ) {
-						mp->replayhead = 0;
+						mp->replay = mp->in_boundary-1;
+						mp->mismatch = mp->req->query.multipartboundary[mp->replay];
 						mp->in_boundary = 1;
-					} else {
-						mp->replayhead = 1;
+					} else 
+#endif
+					{
+						mp->mismatch = ch;
+						mp->replay = mp->in_boundary;
 						mp->in_boundary = 0;
-					}
-					ch = mp->req->query.multipartboundary[mp->replayhead++];
+					} 
 
-					debug_printf("|%d..%d", mp->replayhead, mp->replay);
-				}
-				debug_putc('}');
+					goto replay;
 
+				} 
 				return ch;
 			}
 			ch = picohttpGetch(mp->req);
@@ -1326,12 +1295,10 @@ struct picohttpMultipart picohttpMultipartStart(
 		.finished = 0,
 		.contenttype = 0,
 		.disposition = { .name = {0,} },
-		.in_boundary = 0,
-		.replay = 0,
-		.replayhead = 0
+		.in_boundary = 2,
+		.replayhead = 2,
+		.mismatch = -1,
 	};
-
-	picohttpMultipartSync(&mp);
 
 	return mp;
 }
@@ -1352,11 +1319,8 @@ int picohttpMultipartNext(
 
 			if( 1 == mp->finished ) {
 				mp->finished = 0;
-				mp->replay = 0;
-				mp->replayhead = 0;
-				mp->in_boundary = 0;
 
-				if( 0 > (ch = picohttpMultipartGetch(mp)) )
+				if( 0 > (ch = picohttpGetch(mp->req)) )
 					return ch;
 
 				if( 0 > (ch = picohttpProcessHeaders(
@@ -1373,6 +1337,9 @@ int picohttpMultipartNext(
 						return -1;
 					}
 				}
+				mp->mismatch = -1;
+				mp->in_boundary = 
+				mp->replayhead = 0;
 
 				mp->req->query.prev_ch[0] = '\n';
 				mp->req->query.prev_ch[1] = '\r';
