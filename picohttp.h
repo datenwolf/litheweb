@@ -103,17 +103,6 @@ struct picohttpDateTime {
 	unsigned int s:5; /* seconds / 2 */
 };
 
-#define PICOHTTP_EPOCH_YEAR 1980
-
-struct picohttpDateTime {
-	unsigned int Y:7; /* EPOCH + 127 years */
-	unsigned int M:4;
-	unsigned int D:5;
-	unsigned int h:5;
-	unsigned int m:6;
-	unsigned int s:5; /* seconds / 2 */
-};
-
 struct picohttpRequest {
 	struct picohttpIoOps const * ioops;
 	struct picohttpURLRoute const * route;
