@@ -1159,14 +1159,11 @@ replay:
 			} else {
 				if( mp->in_boundary ) 
 				{
-#if 1
 					if( '\r' == ch ) {
 						mp->replay = mp->in_boundary-1;
 						mp->mismatch = mp->req->query.multipartboundary[mp->replay];
 						mp->in_boundary = 1;
-					} else 
-#endif
-					{
+					} else {
 						mp->mismatch = ch;
 						mp->replay = mp->in_boundary;
 						mp->in_boundary = 0;
