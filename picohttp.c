@@ -99,7 +99,7 @@ static size_t picohttp_fmt_int(char *dest,int i) {
 #define picohttp_fmt_int fmt_long
 #endif
 
-static char const * const picohttpStatusString(int code)
+static char const *picohttpStatusString(int code)
 {
 	switch(code) {
 	case 200:
