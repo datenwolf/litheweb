@@ -453,7 +453,7 @@ static size_t picohttpMatchURL(
 	return j;
 }
 
-static int8_t picohttpMatchRoute(
+static int picohttpMatchRoute(
 	struct picohttpRequest * const req,
 	struct picohttpURLRoute const * const routes )
 {
@@ -1113,6 +1113,25 @@ int picohttpResponseWrite (
 	return len;
 }
 
+static void picohttpMultipartSync(
+	struct picohttpMultipart * const mp)
+{
+	if( '\r' == mp->req->query.prev_ch[0] ) {
+		mp->replayhead = 0; 
+		mp->in_boundary = 1;
+		debug_printf("mpsync <CR>\n");
+	} else
+	if( '\n' == mp->req->query.prev_ch[0] &&
+	    '\r' == mp->req->query.prev_ch[1] ) {
+		mp->replayhead = 1;
+		mp->in_boundary = 2;
+		debug_printf("mpsync <CR><LF>\n");
+	} else {
+		mp->replayhead = -1;
+		mp->in_boundary = 0;
+	}
+}
+
 int picohttpMultipartGetch(
 	struct picohttpMultipart * const mp)
 {
@@ -1124,18 +1143,17 @@ int picohttpMultipartGetch(
 		if( mp->replayhead < mp->replay ) {
 			ch = mp->req->query.multipartboundary[mp->replayhead];
 			mp->replayhead++;
-			debug_printf("replay head: %0.2x\n", ch);
+			debug_printf(" >> : %0.2x\n", ch);
 			return ch;
 		} else {
-			ch = mp->req->query.prev_ch[0];
 			mp->replay = 0;
-			mp->replayhead = 0;
-			debug_printf("replay prev: %0.2x\n", ch);
+			ch = mp->req->query.prev_ch[0];
+			picohttpMultipartSync(mp);
+			debug_printf(" >>|: %0.2x\n", ch);
 			return ch;
 		}
 	} else {
-		mp->replay = 0;
-
+end_of_replay_was_CR:
 		ch = picohttpGetch(mp->req);
 
 	/* picohttp's query and header parsing is forgiving
@@ -1145,40 +1163,17 @@ int picohttpMultipartGetch(
 	 * a <CR><LF> sequence.
 	 */
 
-		switch(ch) {
-		case '\r':
-			debug_printf("(CR)", ch); break;
-		case '\n':
-			debug_printf("(LF)", ch); break;
-		default:
-			debug_printf("(%c)", ch);
-		}
-		if( '\r' == ch ) {
-			mp->replayhead =
-			mp->in_boundary = 0;
-			if( '\r' == mp->req->query.prev_ch[1] ) {
-				debug_printf("<CR|run>");
-				return '\r';
-			} else {
-				debug_printf("<CR>");
-			}
-		} else
-		if( '\n' == ch &&
-		    '\r' == mp->req->query.prev_ch[1] ) {
-			mp->replayhead = 
-			mp->in_boundary = 1;
-			debug_printf("<CR><LF>");
-		} else
-		if(  '-' == ch &&
-		    '\n' == mp->req->query.prev_ch[1] &&
-		    '\r' == mp->req->query.prev_ch[2]
-		) {
-			mp->replayhead =
-			mp->in_boundary = 2;
-			debug_printf("<CR><LF>-");
-		} 
-
 		while( 0 <= ch ) {
+
+			switch(ch) {
+			case '\r':
+				debug_printf("(CR)", ch); break;
+			case '\n':
+				debug_printf("(LF)", ch); break;
+			default:
+				debug_printf("(%c)", ch);
+			}
+
 
 			if( mp->req->query.multipartboundary[mp->in_boundary] == ch ) {
 				if( 0 == mp->req->query.multipartboundary[mp->in_boundary+1] ) {
@@ -1197,9 +1192,10 @@ int picohttpMultipartGetch(
 						mp->finished = 1;
 					}
 
-				/* TODO: Technically the last boundary is followed by
-				 * a last <CR><LF> sequence... we should check for this
-				 * as well, just for completeness */
+				/* TODO: Technically the last boundary is followed by a
+				 * terminating <CR><LF> sequence... we should check for
+				 * this as well, just for completeness
+				 */
 					if(trail[0] == '-' && trail[1] == '-')
 						mp->finished = 2;
 
@@ -1208,55 +1204,22 @@ int picohttpMultipartGetch(
 				debug_printf("{#}", ch);
 				mp->in_boundary++;
 			} else {
-				debug_printf("{_}", ch);
+				debug_printf("{_|%0.2x", ch);
 				if( mp->in_boundary ) {
-
-				/* In case the mismatch was due to a <CR> or <LF>
-				 * or '-' character, it must be checked, if this may be
-				 * preceeded by some <CR><LF>* sequence that would
-				 * allow to be a valid multipart boundary.
-				 * In that case the exact replay parameters depend
-				 * on the specific combination.
-				 *
-				 * The replay code above also emits the last character
-				 * read from IO, but in this case that character is
-				 * far ahead of what should actually be returned.
-				 * So we maniulate the content of the prev_ch[0]
-				 * to be the final character of the replay and
-				 * have the replay from the boundary buffer be one
-				 * position short
-				 */
-
-				/* dw: I really hate how deep this nests, but
-				 * unfortunately HTTP and multipart body parsing
-				 * is a nasty, convoluted state machine
-				 */
+					mp->replay = mp->in_boundary;
 					if( '\r' == ch ) {
-						mp->replay = mp->in_boundary - 1;
+						mp->replayhead = 0;
 						mp->in_boundary = 1;
-						mp->req->query.prev_ch[0] = 
-							mp->req->query.multipartboundary[mp->replay];
-					} else
-					if( '\n' == ch &&
-					    '\r' == mp->req->query.prev_ch[1] ) {
-						mp->replay = mp->in_boundary - 2;
-						mp->in_boundary = 2;
-						mp->req->query.prev_ch[0] = 
-							mp->req->query.multipartboundary[mp->replay];
-					} else
-					if(  '-' == ch &&
-					    '\n' == mp->req->query.prev_ch[1] &&
-					    '\r' == mp->req->query.prev_ch[2]
-					) {
-						mp->replay = mp->in_boundary - 4;
-						mp->in_boundary = 2;
 					} else {
-						mp->replay = mp->in_boundary;
+						mp->replayhead = 1;
 						mp->in_boundary = 0;
 					}
-
 					ch = mp->req->query.multipartboundary[mp->replayhead++];
+
+					debug_printf("|%d..%d", mp->replayhead, mp->replay);
 				}
+				debug_putc('}');
+
 				return ch;
 			}
 			ch = picohttpGetch(mp->req);
@@ -1367,6 +1330,8 @@ struct picohttpMultipart picohttpMultipartStart(
 		.replay = 0,
 		.replayhead = 0
 	};
+
+	picohttpMultipartSync(&mp);
 
 	return mp;
 }

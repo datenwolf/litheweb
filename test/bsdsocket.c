@@ -15,14 +15,14 @@
 
 #include "../picohttp.h"
 
-int bsdsock_read(size_t count, char *buf, void *data)
+int bsdsock_read(size_t count, void *buf, void *data)
 {
 	int fd = *((int*)data);
 	
 	ssize_t rb = 0;
 	ssize_t r = 0;
 	do {
-		r = read(fd, buf+rb, count-rb);
+		r = read(fd, (unsigned char*)buf + rb, count-rb);
 		if( 0 < r ) {
 			rb += r;
 			continue;
@@ -41,14 +41,14 @@ int bsdsock_read(size_t count, char *buf, void *data)
 	return rb;
 }
 
-int bsdsock_write(size_t count, char const *buf, void *data)
+int bsdsock_write(size_t count, void const *buf, void *data)
 {
 	int fd = *((int*)data);
 	
 	ssize_t wb = 0;
 	ssize_t w = 0;
 	do {
-		w = write(fd, buf+wb, count-wb);
+		w = write(fd, (unsigned char*)buf + wb, count-wb);
 		if( 0 < w ) {
 			wb += w;
 			continue;
@@ -69,16 +69,17 @@ int bsdsock_write(size_t count, char const *buf, void *data)
 
 int bsdsock_getch(void *data)
 {
-	char ch;
+	unsigned char ch;
 	int err;
 	if( 1 != (err = bsdsock_read(1, &ch, data)) )
 		return err;
 	return ch;
 }
 
-int bsdsock_putch(char ch, void *data)
+int bsdsock_putch(int ch, void *data)
 {
-	return bsdsock_write(1, &ch, data);
+	char ch_ = ch;
+	return bsdsock_write(1, &ch_, data);
 }
 
 int bsdsock_flush(void* data)
@@ -144,11 +145,21 @@ void rhUpload(struct picohttpRequest *req)
 
 	struct picohttpMultipart mp = picohttpMultipartStart(req);
 	
+	chdir("/tmp/uploadtest");
 	while( !picohttpMultipartNext(&mp) ) {
 		fprintf(stderr, "\nprocessing form field \"%s\"\n", mp.disposition.name);
-		for(int16_t ch = picohttpMultipartGetch(&mp);
+		FILE *fil = fopen(mp.disposition.name, "wb");
+		if(!fil) {
+			continue;
+		}
+
+		for(int ch = picohttpMultipartGetch(&mp);
 		    0 <= ch;
 		    ch = picohttpMultipartGetch(&mp) ) {
+			fputc(ch, fil);
+
+		#if HOST_DEBUG
+			fputs("\e[32m", stderr);
 			switch(ch) {
 			case '\r':
 				fputs("[CR]", stderr); break;
@@ -158,7 +169,11 @@ void rhUpload(struct picohttpRequest *req)
 			default:
 				fputc(ch, stderr);
 			}
+			fputs("\e[0m", stderr);
+		#endif/*HOST_DEBUG*/
 		}
+
+		fclose(fil);
 		if( !mp.finished ) {
 			break;
 		}

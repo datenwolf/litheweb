@@ -47,10 +47,10 @@
 #define PICOHTTP_STATUS_505_HTTP_VERSION_NOT_SUPPORTED 505
 
 struct picohttpIoOps {
-	int (*read)(size_t /*count*/, char* /*buf*/, void*);
-	int (*write)(size_t /*count*/, char const* /*buf*/, void*);
+	int (*read)(size_t /*count*/, void* /*buf*/, void*);
+	int (*write)(size_t /*count*/, void const* /*buf*/, void*);
 	int (*getch)(void*); // returns negative value on error
-	int (*putch)(char, void*);
+	int (*putch)(int, void*);
 	int (*flush)(void*);
 	void *data;
 };
@@ -120,8 +120,8 @@ struct picohttpRequest {
 		size_t contentlength;
 		uint8_t contentencoding;
 		uint8_t transferencoding;
-		char multipartboundary[PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1];
-		char prev_ch[5];
+		unsigned char multipartboundary[PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1];
+		unsigned char prev_ch[5];
 		size_t chunklength;
 	} query;
 	struct {
