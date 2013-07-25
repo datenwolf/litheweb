@@ -113,6 +113,8 @@ void rhRoot(struct picohttpRequest *req)
 "<label for=\"name\">Name: </label><input type=\"text\" name=\"name\"></input><br/>\n"
 "<label for=\"file1\">File: </label><input type=\"file\" name=\"file1\"></input><br/>\n"
 "<label for=\"file2\">File: </label><input type=\"file\" name=\"file2\"></input><br/>\n"
+"<input type=\"checkbox\" name=\"delete\" value=\"file1\"></input><br/>\n"
+"<input type=\"checkbox\" name=\"delete\" value=\"file2\"></input><br/>\n"
 "<input type=\"submit\" value=\"Upload\"></input>\n"
 "</form>\n"
 "</body></html>\n";
