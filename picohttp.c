@@ -110,6 +110,8 @@ static char const *picohttpStatusString(int code)
 		return "Not Found";
 	case 414:
 		return "Request URI Too Long";
+	case 422:
+		return "Unprocessable Entity";
 	case 500:
 		return "Internal Server Error";
 	case 501:
