@@ -1053,6 +1053,18 @@ int picohttpResponseSendHeaders (
 			return e;
 	}
 
+	if(req->response.disposition) {
+		/* Content-Type header */
+		if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CONTENT)) ||
+		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR__DISPOSITION)) ||
+		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CLSP)) ||
+		    0 > (e = picohttpIoWrite(
+				req->ioops, strlen(req->response.disposition),
+				req->response.disposition))  ||
+		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
+			return e;
+	}
+
 	/* Content-Length header */
 	if( req->response.contentlength ){
 		p = picohttp_fmt_uint(tmp, req->response.contentlength);
