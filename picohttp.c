@@ -1,23 +1,11 @@
 #include "picohttp.h"
-
-#define picohttpIoWrite(ioops,size,buf) (ioops->write(size, buf, ioops->data))
-#define picohttpIoRead(ioops,size,buf)  (ioops->read(size, buf, ioops->data))
-#define picohttpIoGetch(ioops)          (ioops->getch(ioops->data))
-#define picohttpIoPutch(ioops,c)        (ioops->putch(c, ioops->data))
-#define picohttpIoFlush(ioops)          (ioops->flush(ioops->data))
-
-#ifdef HOST_DEBUG
-#include <stdio.h>
-#define debug_printf(...) do{fprintf(stderr, __VA_ARGS__);}while(0)
-#define debug_putc(x) do{fputc(x, stderr);}while(0)
-#else
-#define debug_printf(...) do{}while(0)
-#define debug_putc(x) do{}while(0)
-#endif
+#include "picohttp_debug.h"
 
 #include <alloca.h>
 #include <string.h>
 #include <stdlib.h>
+
+#include "picohttp_base64.h"
 
 static char const PICOHTTP_STR_CRLF[] = "\r\n";
 static char const PICOHTTP_STR_CLSP[] = ": ";
@@ -56,9 +44,17 @@ static char const PICOHTTP_STR_NAME__[] = " name=\"";
 
 static char const PICOHTTP_STR_CHUNKED[] = "chunked";
 
+static char const PICOHTTP_STR_WWW_AUTHENTICATE[] = "WWW-Authenticate";
+static char const PICOHTTP_STR_AUTHORIZATION[] = "Authorization";
+static char const PICOHTTP_STR_BASIC_[] = "Basic ";
+static char const PICOHTTP_STR_DIGEST_[] = "Digest ";
+static char const PICOHTTP_STR_REALM__[] = "realm=\"";
+
 /* compilation unit local function forward declarations */
 static int picohttpProcessHeaders (
 	struct picohttpRequest * const req,
+	size_t const hvbuflen,
+	char * const headervalue,
 	picohttpHeaderFieldCallback headerfieldcallback,
 	void * const data,
 	int ch );
@@ -85,6 +81,7 @@ static size_t picohttp_fmt_uint(char *dest, unsigned int i)
 	return len;
 }
 
+#if 0
 static size_t picohttp_fmt_int(char *dest,int i) {
 	if( i < 0 ) {
 		if( dest )
@@ -93,6 +90,8 @@ static size_t picohttp_fmt_int(char *dest,int i) {
 	}
 	return picohttp_fmt_uint(dest, i);
 }
+#endif
+
 #else
 #include <djb/byte/fmt.h>
 #define picohttp_fmt_uint fmt_ulong
@@ -106,6 +105,10 @@ static char const *picohttpStatusString(int code)
 		return "OK";
 	case 400:
 		return "Bad Request";
+	case 401:
+		return "Unauthorized";
+	case 403:
+		return "Forbidden";
 	case 404:
 		return "Not Found";
 	case 414:
@@ -128,6 +131,39 @@ void picohttpStatusResponse(
 	req->status = status;
 	char const * const c = picohttpStatusString(req->status);
 	picohttpResponseWrite(req, strlen(c), c);
+}
+
+void picohttpAuthRequired(
+	struct picohttpRequest *req,
+	char const * const realm )
+{
+	/* FIXME: Fits only for Basic Auth!
+	 *        Adjust this for Digest Auth header */
+	size_t const www_authenticate_maxlen = 1 + /* terminating 0 */
+		sizeof(PICOHTTP_STR_BASIC_)-1 +
+		sizeof(PICOHTTP_STR_REALM__)-1 +
+		strlen(realm) +
+		1; /* closing '"' */
+#ifdef PICOWEB_CONFIG_USE_C99VARARRAY	
+	char www_authenticate[www_authenticate_maxlen+1];
+#else
+	char *www_authenticate = alloca(www_authenticate_maxlen+1);
+#endif
+	memset(www_authenticate, 0, www_authenticate_maxlen);
+
+	char *c = www_authenticate;
+	memcpy(c, PICOHTTP_STR_BASIC_, sizeof(PICOHTTP_STR_BASIC_)-1);
+	c += sizeof(PICOHTTP_STR_BASIC_)-1;
+	memcpy(c, PICOHTTP_STR_REALM__, sizeof(PICOHTTP_STR_REALM__)-1);
+	c += sizeof(PICOHTTP_STR_REALM__)-1;
+	for(size_t i=0; realm[i]; i++) {
+		*c++ = realm[i];
+	}
+	*c='"';
+
+	req->response.www_authenticate = www_authenticate;
+
+	picohttpStatusResponse(req, PICOHTTP_STATUS_401_UNAUTHORIZED);
 }
 
 static uint8_t picohttpIsCRLF(int ch)
@@ -318,6 +354,7 @@ int picohttpGetch(struct picohttpRequest * const req)
 			}
 			if( 0 > (ch = picohttpProcessHeaders(
 					req,
+					0, NULL,
 					NULL, NULL,
 					ch))
 			) {
@@ -393,6 +430,7 @@ int picohttpRead(struct picohttpRequest * const req, size_t len, char * const bu
 			}
 			if( 0 > (ch = picohttpProcessHeaders(
 					req,
+					0, NULL,
 					NULL, NULL,
 					ch))
 			) {
@@ -557,7 +595,7 @@ static int picohttpProcessURL (
 			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 
-		if( (urliter - req->url) >= url_max_length ) {
+		if( (size_t)(urliter - req->url) >= url_max_length ) {
 			return -PICOHTTP_STATUS_414_REQUEST_URI_TOO_LONG;
 		}
 		*urliter = ch;
@@ -617,7 +655,7 @@ static int picohttpProcessQuery (
 				return -PICOHTTP_STATUS_400_BAD_REQUEST;
 			}
 
-			if( variter - var >= var_max_length ) {
+			if( (size_t)(variter - var) >= var_max_length ) {
 /* variable name in request longer than longest
  * variable name accepted by route --> skip to next variable */
 				do {
@@ -634,7 +672,7 @@ static int picohttpProcessQuery (
 			ch = picohttpIoGetch(req->ioops);
 		}
 		if( '=' == ch ) {
-			debug_printf("set variable '%s'\n", var);
+			debug_printf("set variable '%s'\r\n", var);
 		} else {
 		}
 	}
@@ -747,13 +785,93 @@ static void picohttpProcessHeaderContentType(
 	}
 }
 
+static void picohttpProcessHeaderAuthorization(
+	struct picohttpRequest * const req,
+	char const *authorization )
+{
+	if(!strncmp(authorization,
+	            PICOHTTP_STR_BASIC_,
+		    sizeof(PICOHTTP_STR_BASIC_)-1)) {
+		authorization += sizeof(PICOHTTP_STR_BASIC_)-1;
+		/* HTTP RFC-2617 Basic Auth */
+
+		if( !req->query.auth
+		 || !req->query.auth->username 
+		 || !req->query.auth->pwresponse ) {
+			return;
+		}
+		size_t user_password_max_len = 
+			req->query.auth->username_maxlen +
+			req->query.auth->pwresponse_maxlen;
+
+#ifdef PICOWEB_CONFIG_USE_C99VARARRAY
+			
+		char user_password[user_password_max_len+1];
+#else
+		char *user_password = alloca(user_password_max_len+1);
+#endif
+		char const *a = authorization;
+		size_t i = 0;
+		while(*a && i < user_password_max_len) {
+			phb64enc_t e = {0,0,0,0};
+			for(size_t j=0; *a && j < 4; j++) {
+				e[j] = *a++;
+			}
+			phb64raw_t r;
+			size_t l = phb64decode(e, r);
+			for(size_t j=0; j < l && i < user_password_max_len; j++, i++) {
+				user_password[i] = r[j];
+			}
+		}
+		user_password[i] = 0;
+
+		debug_printf(
+			"[picohttp] user_password='%s'\r\n",
+			user_password);
+
+		char *c;
+		for(c = user_password; *c && ':' != *c; c++);
+		if( !*c 
+		 || (c - user_password >= user_password_max_len)
+		 || (c - user_password > req->query.auth->username_maxlen)
+		 || (strlen(c+1) > req->query.auth->pwresponse_maxlen) ) {
+			/* no colon found, or colon is last character in string
+			 * or username part doesn't fit into auth.username field
+			 */
+			return;
+		}
+		memset(req->query.auth->username, 0,
+		       req->query.auth->username_maxlen);
+		memset(req->query.auth->pwresponse, 0,
+		       req->query.auth->pwresponse_maxlen);
+
+		memcpy( req->query.auth->username, 
+		        user_password,
+			c - user_password );
+		if(*(++c)) {
+			strncpy(req->query.auth->pwresponse,
+				c,
+				req->query.auth->pwresponse_maxlen);
+		}
+		debug_printf(
+			"[picohttp] Basic Auth: username='%s', password='%s'\r\n",
+			req->query.auth->username,
+			req->query.auth->pwresponse);
+	}
+
+	if(!strncmp(authorization,
+	            PICOHTTP_STR_BASIC_,
+		    sizeof(PICOHTTP_STR_BASIC_)-1)) {
+	}
+}
+
 static void picohttpProcessHeaderField(
 	void * const data,
 	char const *headername,
 	char const *headervalue)
 {
 	struct picohttpRequest * const req = data;
-	debug_printf("%s: %s\n", headername, headervalue);
+	debug_printf("[picohttp] %s: %s\r\n", headername, headervalue);
 	if(!strncmp(headername,
 		    PICOHTTP_STR_CONTENT,
 		    sizeof(PICOHTTP_STR_CONTENT)-1)) {
@@ -791,18 +909,31 @@ static void picohttpProcessHeaderField(
 		}
 		return;
 	}
+
+	if(!strncmp(headername,
+	            PICOHTTP_STR_AUTHORIZATION,
+		    sizeof(PICOHTTP_STR_AUTHORIZATION)-1)) {
+		picohttpProcessHeaderAuthorization(req, headervalue);
+		return;
+	}
 }
 
 static int picohttpProcessHeaders (
 	struct picohttpRequest * const req,
+	size_t const headervalue_maxlen,
+	char * const headervalue,
 	picohttpHeaderFieldCallback headerfieldcallback,
-	void * const data,
+	void * const cb_data,
 	int ch )
 {
 #define PICOHTTP_HEADERNAME_MAX_LEN 32
 	char headername[PICOHTTP_HEADERNAME_MAX_LEN+1] = {0,};
+
+#if 0
 #define PICOHTTP_HEADERVALUE_MAX_LEN 224
 	char headervalue[PICOHTTP_HEADERVALUE_MAX_LEN+1] = {0,};
+#endif
+
 	char *hn = headername;
 	char *hv = headervalue;
 
@@ -820,8 +951,8 @@ static int picohttpProcessHeaders (
 				/* read until EOL */
 				for(;
 				    0 < ch && !picohttpIsCRLF(ch);
-				    hv = (hv - headervalue) <
-				         PICOHTTP_HEADERVALUE_MAX_LEN ?
+				    hv = (size_t)(hv - headervalue) <
+				         (headervalue_maxlen-1) ?
 					     hv+1 : 0 ) {
 					/* add to header field content */
 
@@ -833,14 +964,14 @@ static int picohttpProcessHeaders (
 			} else {
 				if( *headername && *headervalue && headerfieldcallback )
 					headerfieldcallback(
-						data,
+						cb_data,
 						headername,
 						headervalue );
 				/* new header field */
 				memset(headername, 0, PICOHTTP_HEADERNAME_MAX_LEN+1);
 				hn = headername;
 
-				memset(headervalue, 0, PICOHTTP_HEADERVALUE_MAX_LEN+1);
+				memset(headervalue, 0, headervalue_maxlen);
 				hv = headervalue;
 				/* read until ':' or EOL */
 				for(;
@@ -872,23 +1003,48 @@ static int picohttpProcessHeaders (
 	}
 	if( *headername && *headervalue && headerfieldcallback)
 		headerfieldcallback(
-			data,
+			cb_data,
 			headername,
 			headervalue );
 
 	return ch;
 }
 
-void picohttpProcessRequest (
-	struct picohttpIoOps const * const ioops,
+/* This wraps picohttpProcessHeaders with a *large* header value buffer
+ * so that we can process initial headers of a HTTP request, with loads
+ * of content. Most importantly Digest authentication, which can push quite
+ * some data.
+ *
+ * By calling this function from picohttpProcessRequest the allocation
+ * stays within the stack frame of this function. After the function
+ * returns, the stack gets available for the actual request handler.
+ */
+static int picohttp_wrap_request_prochdrs (
+	struct picohttpRequest * const req,
+	int ch )
+{
+#if PICOHTTP_NO_DIGEST_AUTH
+	size_t const headervalue_maxlen = 256;
+#else
+	size_t const headervalue_maxlen = 768;
+#endif
+	char headervalue[headervalue_maxlen];
+
+	memset(headervalue, 0, headervalue_maxlen);
+
+	return picohttpProcessHeaders(
+		req,
+		headervalue_maxlen,
+		headervalue,
+		picohttpProcessHeaderField,
+		req,
+		ch );
+}
+
+size_t picohttpRoutesMaxUrlLength(
 	struct picohttpURLRoute const * const routes )
 {
-
-	int ch;
-	struct picohttpRequest request = {0,};
-
 	size_t url_max_length = 0;
-#if 1
 	for(size_t i = 0; routes[i].urlhead; i++) {
 		size_t url_length =
 			strlen(routes[i].urlhead) +
@@ -897,9 +1053,21 @@ void picohttpProcessRequest (
 		if(url_length > url_max_length)
 			url_max_length = url_length;
 	}
-#else
-	url_max_length = 512;
-#endif
+	return url_max_length;
+}
+
+void picohttpProcessRequest (
+	struct picohttpIoOps const * const ioops,
+	struct picohttpURLRoute const * const routes,
+	struct picohttpAuthData * const authdata,
+	void *userdata)
+{
+
+	int ch;
+	struct picohttpRequest request;
+	memset(&request, 0, sizeof(request));
+
+	size_t const url_max_length = picohttpRoutesMaxUrlLength(routes);
 #ifdef PICOWEB_CONFIG_USE_C99VARARRAY
 	char url[url_max_length+1];
 #else
@@ -916,6 +1084,8 @@ void picohttpProcessRequest (
 	request.sent.header = 0;
 	request.sent.octets = 0;
 	request.received_octets = 0;
+	request.userdata = userdata;
+	request.query.auth = authdata;
 
 	request.method = picohttpProcessRequestMethod(ioops);
 	if( !request.method ) {
@@ -956,11 +1126,7 @@ void picohttpProcessRequest (
 		goto http_error;
 	}
 
-	if( 0 > (ch = picohttpProcessHeaders(
-			&request,
-			picohttpProcessHeaderField,
-			&request,
-			ch)) )
+	if( 0 > (ch = picohttp_wrap_request_prochdrs(&request, ch)) )
 		goto http_error;
 
 	if( '\r' == ch ) {	
@@ -1072,6 +1238,17 @@ int picohttpResponseSendHeaders (
 		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR__LENGTH)) ||
 		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CLSP)) ||
 		    0 > (e = picohttpIoWrite(req->ioops, p, tmp))  ||
+		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
+			return e;
+	}
+
+	/* WWW-Authenticate header */
+	if( req->response.www_authenticate ){
+		if( 0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_WWW_AUTHENTICATE)) ||
+		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CLSP)) ||
+		    0 > (e = picohttpIoWrite(
+				req->ioops, strlen(req->response.www_authenticate),
+				req->response.www_authenticate))  ||
 		    0 > (e = picohttpIO_WRITE_STATIC_STR(PICOHTTP_STR_CRLF)) )
 			return e;
 	}
@@ -1313,6 +1490,8 @@ int picohttpMultipartNext(
 		return -1;
 	} 
 
+	char headervalbuf[224];
+
 	for(;;) {
 		int ch = picohttpMultipartGetch(mp);
 		if( 0 > ch ) {
@@ -1326,8 +1505,11 @@ int picohttpMultipartNext(
 				if( 0 > (ch = picohttpGetch(mp->req)) )
 					return ch;
 
+				memset(headervalbuf, 0, sizeof(headervalbuf));
 				if( 0 > (ch = picohttpProcessHeaders(
 						mp->req,
+						sizeof(headervalbuf),
+						headervalbuf,
 						picohttpMultipartHeaderField,
 						mp,
 						ch)) )

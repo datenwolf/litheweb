@@ -39,6 +39,8 @@
 
 #define PICOHTTP_STATUS_200_OK 200
 #define PICOHTTP_STATUS_400_BAD_REQUEST 400
+#define PICOHTTP_STATUS_401_UNAUTHORIZED 401
+#define PICOHTTP_STATUS_403_FORBIDDEN 402
 #define PICOHTTP_STATUS_404_NOT_FOUND 404
 #define PICOHTTP_STATUS_405_METHOD_NOT_ALLOWED 405
 #define PICOHTTP_STATUS_414_REQUEST_URI_TOO_LONG 414
@@ -54,6 +56,12 @@ struct picohttpIoOps {
 	int (*flush)(void*);
 	void *data;
 };
+
+#define picohttpIoWrite(ioops,size,buf) (ioops->write(size, buf, ioops->data))
+#define picohttpIoRead(ioops,size,buf)  (ioops->read(size, buf, ioops->data))
+#define picohttpIoGetch(ioops)          (ioops->getch(ioops->data))
+#define picohttpIoPutch(ioops,c)        (ioops->putch(c, ioops->data))
+#define picohttpIoFlush(ioops)          (ioops->flush(ioops->data))
 
 enum picohttpVarType {
 	PICOHTTP_TYPE_UNDEFINED = 0,
@@ -103,6 +111,24 @@ struct picohttpDateTime {
 	unsigned int s:5; /* seconds / 2 */
 };
 
+struct picohttpAuthData {
+	size_t const username_maxlen;
+	char  * const username;
+
+	size_t const realm_maxlen;
+	char* const realm;
+
+	/* Basic auth password or Digest auth response */
+	size_t const pwresponse_maxlen;
+	char * const pwresponse;
+
+	size_t const uri_maxlen;
+	char * const uri;
+
+	int qop;
+
+};
+
 struct picohttpRequest {
 	struct picohttpIoOps const * ioops;
 	struct picohttpURLRoute const * route;
@@ -122,10 +148,12 @@ struct picohttpRequest {
 		uint8_t transferencoding;
 		char multipartboundary[PICOHTTP_MULTIPARTBOUNDARY_MAX_LEN+1];
 		size_t chunklength;
+		struct picohttpAuthData *auth;
 	} query;
 	struct {
 		char const *contenttype;
 		char const *disposition;
+		char const *www_authenticate;
 		struct picohttpDateTime lastmodified;
 		int max_age;
 		size_t contentlength;
@@ -137,6 +165,7 @@ struct picohttpRequest {
 		size_t octets;
 		uint8_t header;
 	} sent;
+	void *userdata;
 };
 
 struct picohttpMultipart {
@@ -157,12 +186,22 @@ typedef void (*picohttpHeaderFieldCallback)(
 	char const *headername,
 	char const *headervalue);
 
+size_t picohttpRoutesMaxUrlLength(
+	struct picohttpURLRoute const * const routes );
+
 void picohttpProcessRequest(
 	struct picohttpIoOps const * const ioops,
-	struct picohttpURLRoute const * const routes );
+	struct picohttpURLRoute const * const routes,
+	struct picohttpAuthData * const authdata,
+	void *userdata );
 
 void picohttpStatusResponse(
 	struct picohttpRequest *req, int status );
+
+void picohttpAuthRequired(
+	struct picohttpRequest *req,
+	char const * const realm );
+
 
 int picohttpResponseSendHeader (
 	struct picohttpRequest * const req );
