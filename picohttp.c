@@ -49,6 +49,9 @@ static char const PICOHTTP_STR_AUTHORIZATION[] = "Authorization";
 static char const PICOHTTP_STR_BASIC_[] = "Basic ";
 static char const PICOHTTP_STR_DIGEST_[] = "Digest ";
 static char const PICOHTTP_STR_REALM__[] = "realm=\"";
+static char const PICOHTTP_STR_USERNAME__[] = "username=\"";
+static char const PICOHTTP_STR_QOP_[] = "qop=";
+static char const PICOHTTP_STR_NC_[] = "nc=";
 
 /* compilation unit local function forward declarations */
 static int picohttpProcessHeaders (
@@ -819,6 +822,10 @@ static void picohttpProcessHeaderAuthorization(
 			}
 			phb64raw_t r;
 			size_t l = phb64decode(e, r);
+			if( !l ) {
+				/* invalid chunk => abort the whole header */
+				return;
+			}
 			for(size_t j=0; j < l && i < user_password_max_len; j++, i++) {
 				user_password[i] = r[j];
 			}
@@ -857,11 +864,13 @@ static void picohttpProcessHeaderAuthorization(
 			"[picohttp] Basic Auth: username='%s', password='%s'\r\n",
 			req->query.auth->username,
 			req->query.auth->pwresponse);
+		return;
 	}
 
 	if(!strncmp(authorization,
-	            PICOHTTP_STR_BASIC_,
-		    sizeof(PICOHTTP_STR_BASIC_)-1)) {
+	            PICOHTTP_STR_DIGEST_,
+		    sizeof(PICOHTTP_STR_DIGEST_)-1)) {
+		return;
 	}
 }
 

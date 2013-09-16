@@ -2,7 +2,7 @@
 #ifndef PICOHTTP_DEBUG_H
 #define PICOHTTP_DEBUG_H
 
-#if 1
+#if 0
 #include <util/debug_utils.h>
 #endif
 

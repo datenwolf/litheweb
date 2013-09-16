@@ -122,11 +122,13 @@ struct picohttpAuthData {
 	size_t const pwresponse_maxlen;
 	char * const pwresponse;
 
+#if 0
 	size_t const uri_maxlen;
 	char * const uri;
+#endif
 
-	int qop;
-
+	unsigned int message_qop;
+	uint32_t nonce_count;
 };
 
 struct picohttpRequest {
