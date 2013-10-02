@@ -839,8 +839,8 @@ static void picohttpProcessHeaderAuthorization(
 		char *c;
 		for(c = user_password; *c && ':' != *c; c++);
 		if( !*c 
-		 || (c - user_password >= user_password_max_len)
-		 || (c - user_password > req->query.auth->username_maxlen)
+		 || ((size_t)(c - user_password) >= user_password_max_len)
+		 || ((size_t)(c - user_password) > req->query.auth->username_maxlen)
 		 || (strlen(c+1) > req->query.auth->pwresponse_maxlen) ) {
 			/* no colon found, or colon is last character in string
 			 * or username part doesn't fit into auth.username field
