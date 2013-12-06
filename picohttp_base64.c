@@ -5,24 +5,22 @@ void phb64encode(
 	size_t count,
 	phb64enc_t enc)
 {
-	switch(count) {
-	default: break;
-	case 2:
-		enc[3] = 0xff; 
-	case 1:
-		enc[2] = 0xff;
-	}
+	enc[1] = 0;
+	enc[3] = 0xff;
+	enc[2] = (count > 1) ? 0 : 0xff;
+
 	switch(count) {
 	default:
 		return;
-	case 4:
-		enc[3] |= ((raw[3] & 0x3f));
 	case 3:
+		enc[3] = ((raw[2] & 0x3f));
+		enc[2] = ((raw[2] & 0xc0) >> 6);
 	case 2:
-		enc[2] |= ((raw[2] & 0xc0) >> 6) | ((raw[1] & 0x0f) << 2);
+		enc[2] |= ((raw[1] & 0x0f) << 2);
+		enc[1]  = ((raw[1] & 0xf0) >> 4);
 	case 1:
-		enc[1] = ((raw[1] & 0xf0) >> 4) | ((raw[0] & 0x03) << 4);
-		enc[0] = ((raw[0] & 0xfc) >> 2);
+		enc[1] |= ((raw[0] & 0x03) << 4);
+		enc[0]  = ((raw[0] & 0xfc) >> 2);
 	}
 
 	for(int i = 0; i < 4; i++) {

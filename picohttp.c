@@ -826,7 +826,10 @@ static void picohttpProcessHeaderAuthorization(
 				/* invalid chunk => abort the whole header */
 				return;
 			}
-			for(size_t j=0; j < l && i < user_password_max_len; j++, i++) {
+			for(size_t j=0;
+			       j < l
+			    && i < user_password_max_len;
+			    j++, i++) {
 				user_password[i] = r[j];
 			}
 		}
