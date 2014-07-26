@@ -25,6 +25,7 @@
 #include <alloca.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "picohttp_base64.h"
 
@@ -183,28 +184,24 @@ void picohttpAuthRequired(
 	for(size_t i=0; realm[i]; i++) {
 		*c++ = realm[i];
 	}
-	*c='"';
+	*c = '"';
 
 	req->response.www_authenticate = www_authenticate;
 
 	picohttpStatusResponse(req, PICOHTTP_STATUS_401_UNAUTHORIZED);
 }
 
-static uint8_t picohttpIsCRLF(int ch)
+static inline bool picohttpIsCRLF(int ch)
 {
-	switch(ch) {
-	case '\r':
-	case '\n':
-		return 1;
-	}
-	return 0;
+	return '\r' == ch
+	    || '\n' == ch;
 }
 
-static uint8_t picohttpIsLWS(int ch)
+static inline bool picohttpIsLWS(int ch)
 {
-	return 
-		picohttpIsCRLF(ch) ||
-		' ' == ch || '\t' == ch;
+	return picohttpIsCRLF(ch)
+	    || ' '  == ch
+	    || '\t' == ch;
 }
 
 static int picohttpIoSkipSpace (
@@ -212,12 +209,12 @@ static int picohttpIoSkipSpace (
 	int ch)
 {
 	for(;;ch = -1) {
-		if(0 > ch) {
+		if( 0 > ch ) {
 			ch = picohttpIoGetch(ioops);
 		}
 
-		if( 0 > ch ||
-		    ( ' ' != ch && '\t' != ch ) )
+		if( 0 > ch
+		 || ( ' ' != ch && '\t' != ch ) )
 			break;
 	}
 	return ch;
@@ -232,19 +229,19 @@ static int picohttpIoSkipOverCRLF (
 			ch = picohttpIoGetch(ioops);
 		}
 
-		if( ch < 0 ) {
+		if( 0 > ch ) {
 			return -1;
 		}
 
-		if( ch == '\n' ) {
+		if( '\n' == ch ) {
 			break;
 		}
-		if( ch == '\r' ) {
+		if( '\r' == ch ) {
 			ch = picohttpIoGetch(ioops);
-			if( ch < 0 ) {
+			if( 0 > ch ) {
 				return -1;
 			}
-			if( ch != '\n' ) {
+			if( '\n' != ch ) {
 				return 0;
 			}
 			break;
@@ -262,7 +259,7 @@ static int picohttpIoB10ToU8 (
 	if( 0 > ch )
 		ch = picohttpIoGetch(ioops);
 
-	while( ch >= '0' && ch <= '9' ) {
+	while( '0' <= ch && '9' >= ch ) {
 		*i *= 10;
 		*i += (ch & 0x0f);
 		ch = picohttpIoGetch(ioops);
@@ -279,7 +276,7 @@ static int picohttpIoB10ToU64 (
 	if( 0 > ch )
 		ch = picohttpIoGetch(ioops);
 
-	while( ch >= '0' && ch <= '9' ) {
+	while( '0' <= ch && '9' >= ch ) {
 		*i *= 10;
 		*i += (ch & 0x0f);
 		ch = picohttpIoGetch(ioops);
@@ -297,10 +294,10 @@ static int picohttpIoGetPercentCh(
 		return chr;
 
 	chr |= 0x20;
-	if( chr >= '0' && chr <= '9' ) {
+	if( '0' <= chr && '9' >= chr ) {
 		ch = ((chr)&0x0f)<<4;
-	} else if(
-	    chr >= 'a' && chr <= 'f' ) {
+	} else
+	if( 'a' <= chr && 'f' >= chr ) {
 		ch = (((chr)&0x0f) + 9)<<4;
 	}
 
@@ -308,10 +305,10 @@ static int picohttpIoGetPercentCh(
 		return chr;
 
 	chr |= 0x20;
-	if( chr >= '0' && chr <= '9' ) {
+	if( '0' <= chr && '9' >= chr ) {
 		ch |= ((chr)&0x0f);
-	} else if(
-	    chr >= 'a' && chr <= 'f' ) {
+	} else
+	if( 'a' <= chr && 'f' >= chr ) {
 		ch |= (((chr)&0x0f) + 9);
 	}
 
@@ -602,7 +599,7 @@ static int picohttpProcessURL (
 	 */
 	/* Deliberately discarding const qualifier! */
 	for(char *urliter = req->url ;; urliter++) {
-		if( ch < 0 ) {
+		if( 0 > ch ) {
 			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 		if( '?' == ch ||
@@ -652,7 +649,7 @@ static int picohttpProcessQuery (
 		memset(var, 0, var_max_length+1);
 		ch = picohttpIoGetch(req->ioops);
 
-		if( ch < 0 ) {
+		if( 0 > ch ) {
 			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 		if( '&' == ch )
@@ -660,7 +657,7 @@ static int picohttpProcessQuery (
 
 
 		for(char *variter = var ;; variter++) {
-			if( ch < 0 ) {
+			if( 0 > ch) {
 				return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 			}
 			if( '='  == ch ||
@@ -715,7 +712,7 @@ static int picohttpProcessHTTPVersion (
 	if( !picohttpIsCRLF(ch) ) {
 		for(uint8_t i = 0; i < 5; i++) {
 			if(PICOHTTP_STR_HTTP_[i] != (char)ch ) {
-				if( ch < 0 ) {
+				if( 0 > ch ) {
 					return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 				}
 				return -PICOHTTP_STATUS_400_BAD_REQUEST;
@@ -729,27 +726,27 @@ static int picohttpProcessHTTPVersion (
 			&req->httpversion.major,
 			req->ioops,
 			ch );
-		if( ch < 0 ) {
+		if( 0 > ch ) {
 			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
-		if( ch != '.' ) {
+		if( '.' != ch ) {
 			return -PICOHTTP_STATUS_400_BAD_REQUEST;
 		}
 		ch = picohttpIoB10ToU8(
 			&req->httpversion.minor,
 			req->ioops,
 			-1 );
-		if( ch < 0 ) {
+		if( 0 > ch ) {
 			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 
 		ch = picohttpIoSkipSpace(req->ioops, ch);
-		if( ch < 0 ) {
+		if( 0 > ch ) {
 			return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 		}
 	}
 	ch = picohttpIoSkipOverCRLF(req->ioops, ch);
-	if( ch < 0 ) {
+	if( 0 > ch ) {
 		return -PICOHTTP_STATUS_500_INTERNAL_SERVER_ERROR;
 	}
 	if( !ch ) {
